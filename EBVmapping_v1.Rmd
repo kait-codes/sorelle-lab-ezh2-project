@@ -29,92 +29,30 @@ bioc_using('Rsubread', 'edgeR', 'biomaRt', 'org.Hs.eg.db')
 
 ```
 
-```{r}
+```{r reference index}
+## not needed if starting with count matrix
 # index with human & EBV genome
 buildindex(basename='hg38_ebv1', reference=ref_genome)
 ```
 
-```{r}
-counts_df <- read.delim(file.path(data_dir, "galaxy_counts.tabular"))
 
-cnames <- c('gene_id', 1:60)
+```{r diff cell lines}
+cell_lines <- c('akata', 'cf5', 'lcl', 'ibl1', 'mutu')
 
-colnames(counts_df) <- cnames
-
-write.csv(counts_df, file.path(pipe_dir, "counts_all.csv"))
-```
-
-```{r}
-# counts from LCL samples
-counts_lcl <- read.csv(file.path(pipe_dir, 'counts_lcl.csv'))
-
-##FIXME idk how to do multiple groups or iterate to make this less cumbersome
-# trying with just MS1777 vs DMSO first
-sub_lcl <- counts_lcl[1:9]
-
-# converting to DGE list & grouping
-my_groups <- rep(1:2, each = 4)
-dge_sub_lcl <- DGEList(counts = sub_lcl, group = my_groups)
-
-# filter out low counts
-keep <- filterByExpr(dge_sub_lcl)
-dge_sub_lcl <- dge_sub_lcl[keep, , keep.lib.sizes=FALSE]
-
-# normalizing by library size
-dge_sub_lcl <- normLibSizes(dge_sub_lcl)
-
-# est dispersion & testing for DEGs
-y <- estimateDisp(dge_sub_lcl)
-et <- exactTest(y)
-topTags(et)
-
-df <- as.data.frame(et)
-
-# converting ENSEMBL IDs to gene symbol
-genes <- df$gene_id
-annots <- select(org.Hs.eg.db, keys=genes, 
-                columns="SYMBOL", keytype="ENSEMBL")
-
-df <- merge(df, annots, by.x="gene_id", by.y="ENSEMBL")
-
-# annotating DEGs as no/up/down regulated
-df$diffexpressed <- "NO"
-df$diffexpressed[df$logFC > 0.6 & df$PValue < 0.05] <- "UP"
-df$diffexpressed[df$logFC < -0.6 & df$PValue < 0.05] <- "DOWN"
-
-# create a new column for the names of the top 30 DEGs
-df$delabel <- ifelse(df$SYMBOL %in% head(df[order(df$PValue), "SYMBOL"], 30), df$SYMBOL, NA)
-
-# volcano plot
-ggplot(data = df, aes(x = logFC, y = -log10(PValue), col = diffexpressed, label = delabel)) +
-  geom_vline(xintercept = c(-0.6, 0.6), col = "gray", linetype = 'dashed') +
-  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
-  geom_point(size = 2) + 
-  scale_color_manual(values = c("#00AFBB", "grey", "#bb0c00"), # set the colors  
-                     labels = c("Downregulated", "Not significant", "Upregulated")) + # to set the labels 
-  coord_cartesian(ylim = c(0, 250), xlim = c(-10, 10)) + # set coordinate limits
-  labs(color = 'Severe', # legend title 
-       x = expression("log"[2]*"FC"), y = expression("-log"[10]*"p-value")) + 
-  scale_x_continuous(breaks = seq(-10, 10, 2)) + # customize breaks in the x axis
-  ggtitle('LCL cells in MS177 vs DMSO') + # plot title
-  geom_text() ##FIXME idk how to make this look better
- 
+for (x in cell_lines){
+  fit <- edger_degs(x)
+  comparisons <- c('2v1', '3v1', '3v2')
+  for (y in comparisons){
+    edger_volcano_plot(fit, x, y)
+  }
+}
 
 ```
 
 
-```{r}
-group <- c(1,2)
-counts <- readDGE(c("lcl_d_1_counts.tabular", "lcl_m_1_counts.tabular"), group=group)
+TODO as of 01/26:
+- make comparison labeling consistent with any design matrix
+- fix volcano plot point labels for readability
+- GSEA
 
-keep <- filterByExpr(counts)
-y <- counts[keep, , keep.lib.sizes=FALSE]
-
-y <- normLibSizes(y)
-
-z <- estimateDisp(y)
-
-et <- exactTest(z)
-topTags(et)
-```
 
