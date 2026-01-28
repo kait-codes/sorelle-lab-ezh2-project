@@ -16,15 +16,15 @@ rm(list = ls())
 base_dir <- "~/Desktop/sequencing/2025_11_Plasmidsuarus_RNA_Seq"
 code_dir <- file.path(base_dir, "sorelle-lab-ezh2-project")
 data_dir <- file.path(base_dir, "data")
-fastq_dir <- file.path(data_dir, "fastq")
-ref_genome <- file.path(data_dir, "ref_genome/hg38_NC007605_genome.fa")
+#fastq_dir <- file.path(data_dir, "fastq")
+#ref_genome <- file.path(data_dir, "ref_genome/hg38_NC007605_genome.fa")
 pipe_dir <- file.path(base_dir, "pipeline")
 out_dir <- file.path(base_dir, "outputs")
 setwd(code_dir)
 
 source('functions.R')
 
-using('BiocManager', 'dplyr', 'tidyr', 'ggplot2')
+using('BiocManager', 'dplyr', 'tidyr', 'ggplot2', 'ggrepel', 'ggVennDiagram')
 bioc_using('Rsubread', 'edgeR', 'biomaRt', 'org.Hs.eg.db')
 
 ```
@@ -36,23 +36,46 @@ buildindex(basename='hg38_ebv1', reference=ref_genome)
 ```
 
 
-```{r diff cell lines}
+```{r experiment design by treatment status}
+logfc_limit <- 0.6
+pvalue_limit <- 0.05
 cell_lines <- c('akata', 'cf5', 'lcl', 'ibl1', 'mutu')
+treatment_comparisons <- c('2v1', '3v1', '3v2')
 
+# edgeR to find DEGs between treatment groups in each cell line
+## ALREADY RUN
 for (x in cell_lines){
-  fit <- edger_degs(x)
-  comparisons <- c('2v1', '3v1', '3v2')
-  for (y in comparisons){
-    edger_volcano_plot(fit, x, y)
+  fit <- edger_fit_genes(x)
+  for (y in treatment_comparisons){
+    edger_degs(fit, x, y)
   }
 }
 
+# volcano plots for above
+## ALREADY RUN
+for (x in cell_lines){
+  for (y in treatment_comparisons){
+    degs_volcano_plot(x, y)
+  }
+}
+
+# making venn diagrams to compare DEGs between cell lines
+compare_cells <- c('akata', 'cf5') # change for different comparisons
+for (y in treatment_comparisons){
+  degs_venn_diagram(compare_cells, y, 'up')
+  degs_venn_diagram(compare_cells, y, 'down')
+}
 ```
 
 
+
+
 TODO as of 01/26:
+X fix SYMBOL column to include EBV genes
+X venn diagram comparisons
 - make comparison labeling consistent with any design matrix
-- fix volcano plot point labels for readability
+X fix volcano plot point labels for readability
+- compare akata vs cf5 in treatment groups
 - GSEA
 
 
