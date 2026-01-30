@@ -3,6 +3,8 @@ title: "EBVmapping"
 author: "Kaitlyn Tremble"
 date: "2026-01-12"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -24,7 +26,8 @@ setwd(code_dir)
 
 source('functions.R')
 
-using('BiocManager', 'dplyr', 'tidyr', 'ggplot2', 'ggrepel', 'ggVennDiagram')
+using('BiocManager', 'dplyr', 'tidyr', 'ggplot2', 'ggrepel', 'ggVennDiagram', 
+      'Seurat', 'htmlwidgets')
 bioc_using('Rsubread', 'edgeR', 'biomaRt', 'org.Hs.eg.db')
 
 ```
@@ -39,10 +42,12 @@ buildindex(basename='hg38_ebv1', reference=ref_genome)
 ```{r experiment design by treatment status}
 logfc_limit <- 0.6
 pvalue_limit <- 0.05
+
+# COMPARING TREATMENT GROUPS WITHIN CELL LINE
 cell_lines <- c('akata', 'cf5', 'lcl', 'ibl1', 'mutu')
 treatment_comparisons <- c('2v1', '3v1', '3v2')
 
-# edgeR to find DEGs between treatment groups in each cell line
+# edgeR to find DEGs
 ## ALREADY RUN
 for (x in cell_lines){
   fit <- edger_fit_genes(x)
@@ -51,8 +56,7 @@ for (x in cell_lines){
   }
 }
 
-# volcano plots for above
-## ALREADY RUN
+# volcano plots
 for (x in cell_lines){
   for (y in treatment_comparisons){
     degs_volcano_plot(x, y)
@@ -60,22 +64,114 @@ for (x in cell_lines){
 }
 
 # making venn diagrams to compare DEGs between cell lines
-compare_cells <- c('akata', 'cf5') # change for different comparisons
+compare_cells <- c('akata', 'ibl1', 'lcl', 'mutu') # change for different comparisons
 for (y in treatment_comparisons){
   degs_venn_diagram(compare_cells, y, 'up')
   degs_venn_diagram(compare_cells, y, 'down')
 }
+
+
+```
+
+```{r akata vs cf5}
+
+counts <- read.csv(paste0(data_dir, '/exp_counts/counts_all.csv'))
+counts <- counts[,1:25]
+counts_dmso <- counts[,c(1:5,14:17)]
+counts_ms177 <- counts[,c(1,6:9,18:21)]
+counts_taz <- counts[,c(1,10:13,22:25)]
+
+
+groups <- c(1,1,1,1,2,2,2,2)
+dge <- DGEList(counts_taz, group = groups) # creating DGE list
+keep <- filterByExpr(dge) #filtering out low counts
+dge <- dge[keep, , keep.lib.sizes = FALSE]
+norm_counts <- normLibSizes(dge)
+
+
+metadata <- read.csv(file.path(data_dir, 'samples_2.csv'),
+                           stringsAsFactors = TRUE)
+design <- model.matrix( ~ cell_line, data = metadata)
+rownames(design) <- colnames(norm_counts)
+y <- estimateDisp(norm_counts, design, robust = TRUE)
+fit <- glmQLFit(y, design, robust = TRUE)
+
+#cf5 vs akata
+lrt <- glmLRT(fit, coef = 2)
+
+## should put in condition so function stops here without valid comparison
+df <- as.data.frame(lrt)
+
+# converting ENSEMBL IDs to gene symbol
+genes <- df$gene_id
+annots <- select(org.Hs.eg.db,
+                 keys = genes,
+                 columns = "SYMBOL",
+                 keytype = "ENSEMBL")
+
+df <- merge(df, annots, by.x = "gene_id", by.y = "ENSEMBL")
+df$SYMBOL <- ifelse(is.na(df$SYMBOL), df$gene_id, df$SYMBOL)
+
+#removing genes with PValue = 0
+df <- filter(df, PValue != 0)
+
+# annotating DEGs as no/up/down regulated
+df$diffexpressed <- "NO"
+df$diffexpressed[df$logFC > logfc_limit &
+                   df$PValue < pvalue_limit] <- "UP"
+df$diffexpressed[df$logFC < -logfc_limit &
+                   df$PValue < pvalue_limit] <- "DOWN"
+
+treatment <- 'taz'
+
+# saving DEG lists
+## all DEGs
+sorted_df <- df %>% arrange(PValue)
+csv_file_path <- paste0(pipe_dir, '/degs/', treatment, "_cf5_vs_akata.csv")
+write.csv(sorted_df, csv_file_path, row.names = FALSE)
+## significant DEGs
+sig_degs <- filter(sorted_df, diffexpressed != 'NO')
+sig_path <- paste0(pipe_dir, '/degs/', treatment, "_cf5_vs_akata_sig.csv")
+write.csv(sig_degs, sig_path, row.names = FALSE)
+## significant up regulated DEGs
+up_degs <- filter(sorted_df, diffexpressed == 'UP')
+up_path <- paste0(pipe_dir, '/degs/', treatment, "_cf5_vs_akata_sig_up.csv")
+write.csv(up_degs, up_path, row.names = FALSE)
+## significant down regulated DEGs
+down_degs <- filter(sorted_df, diffexpressed == 'DOWN')
+down_path <- paste0(pipe_dir, '/degs/', treatment, "_cf5_vs_akata_sig_down.csv")
+write.csv(down_degs, down_path, row.names = FALSE)
+
+
+
+```
+
+```{r experiment design by cell line}
+# COMPARING CELL LINES WITHIN TREATMENT GROUPS
+treatments <- c('dmso', 'ms177', 'taz')
+cell_comparisons <- 'cf5_vs_akata'
+
+
+# volcano plots
+for (x in treatments){
+  degs_volcano_plot(x, cell_comparisons)
+}
+
+
+# making venn diagrams to compare DEGs between treatment groups
+cells_group <- 'cf5_vs_akata'
+
+treatment_compare <- c('ms177', 'taz')
+
+degs_venn_diagram(treatment_compare, cells_group, 'up')
+degs_venn_diagram(treatment_compare, cells_group, 'down')
+
 ```
 
 
+TODO as of 01/30:
 
-
-TODO as of 01/26:
-X fix SYMBOL column to include EBV genes
-X venn diagram comparisons
-- make comparison labeling consistent with any design matrix
-X fix volcano plot point labels for readability
-- compare akata vs cf5 in treatment groups
-- GSEA
-
+- volcano plot labeling with viral genes, etc...
+- gene ontology (enrichR)
+- make edgeR functions consistent with any experiment design
 

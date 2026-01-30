@@ -33,11 +33,11 @@ edger_fit_genes <- function(cell_line){
   plotMDS(norm_counts)
   dev.off()
   
-  metadata_small <- read.csv(file.path(data_dir, 'samples_treatment.csv'), stringsAsFactors = TRUE)
+  metadata_small <- read.csv(file.path(data_dir, 'samples_treatment.csv'), 
+                             stringsAsFactors = TRUE)
   design <- model.matrix(~ treatment, data = metadata_small)
   rownames(design) <- colnames(norm_counts)
   y <- estimateDisp(norm_counts, design, robust=TRUE)
-  plotBCV(y)
   fit <- glmQLFit(y, design, robust=TRUE)
   
   return(fit)
@@ -103,76 +103,95 @@ edger_degs <- function(fit, cell_line, comparison){
 }
 
 # PLOTS ------------------------------------------------------------------------
-degs_volcano_plot <- function(cell_line, comparison){
+## VOLCANO PLOT -------------------------------------------
+degs_volcano_plot <- function(group, comparison){
   # defining drug comparison
   if (comparison == '2v1') {
-    lrt <- glmLRT(fit, coef=2)
-    drugs <- 'MS177 vs DMSO'
+    title1 <- paste0(toupper(group), ' cells')
+    title2 <- 'MS177 vs DMSO'
   } else if (comparison == '3v1'){
-    lrt <- glmLRT(fit, coef=3)
-    drugs <- 'TAZ vs DMSO'
+    title1 <- paste0(toupper(group), ' cells')
+    title2 <- 'TAZ vs DMSO'
   } else if (comparison == '3v2'){
-    lrt <- glmLRT(fit, contrast=c(0,-1,1))
-    drugs <- 'TAZ vs MS177'
+    title1 <- paste0(toupper(group), ' cells')
+    title2 <- 'TAZ vs MS177'
+  } else if(comparison == 'cf5_vs_akata'){
+    title1 <- paste0(toupper(group), ' treatment')
+    title2 <- 'CF5 vs AKATA cells'
   } else {
     print('ERROR: Invalid comparison')
   }
   
-  print(paste0('Cell line: ', cell_line))
-  print(paste0('Comparison: ', drugs))
+  print(paste0('Group: ', title1))
+  print(paste0('Comparison: ', title2))
   
   # read in data
-  df <- read.csv(paste0(pipe_dir, '/degs/', cell_line, '_', comparison, '.csv'))
+  df <- read.csv(paste0(pipe_dir, '/degs/', group, '_', comparison, '.csv'))
   
   # create a new column for the names of the top 10 DEGs
-  df$delabel <- ifelse(df$SYMBOL %in% head(df[order(df$PValue), "SYMBOL"], 10), df$SYMBOL, NA)
+  df$delabel <- ifelse(df$SYMBOL %in% head(df[order(df$PValue), "SYMBOL"], 10), 
+                       df$SYMBOL, NA)
 
-  plottitle <- paste0(toupper(cell_line), " cells in ", drugs)
-  options <- c(round(max(-log10(df$PValue)), digits = -1) + 50, 100)
-  ymax <- max(options)
+  plottitle <- paste0(title1, " in ", title2) #FIXME
+  xoptions <- c(ceiling(max(abs(df$logFC))) + 1, 10)
+  xmax <- max(xoptions)
+  yoptions <- c(round(max(-log10(df$PValue)), digits = -1) + 50, 100)
+  ymax <- max(yoptions)
+  
+  rownames(df) <- make.unique(as.character(df$SYMBOL))
 
   # volcano plot
-  ggplot(data = df, aes(x = logFC, y = -log10(PValue), col = diffexpressed, label = delabel)) +
+  v_plot <- ggplot(data = df, aes(x = logFC, y = -log10(PValue), 
+                                  col = diffexpressed, label = delabel)) +
     geom_vline(xintercept = c(-logfc_limit, logfc_limit), col = "gray", linetype = 'dashed') +
     geom_hline(yintercept = -log10(pvalue_limit), col = "gray", linetype = 'dashed') +
     geom_point(size = 2) +
     scale_color_manual(values = c("#00AFBB", "grey", "#bb0c00"), # set the colors
                        labels = c("Downregulated", "Not significant", "Upregulated")) +
-    coord_cartesian(ylim = c(0, ymax), xlim = c(-10, 10)) +
+    coord_cartesian(ylim = c(0, ymax), xlim = c(-xmax, xmax)) +
     labs(color = 'Severe', # legend title
          x = expression("log"[2]*"FC"), y = expression("-log"[10]*"p-value")) +
-    scale_x_continuous(breaks = seq(-10, 10, 2)) + # customize breaks in the x axis
+    scale_x_continuous(breaks = seq(-xmax, xmax, 2)) + # customize breaks in the x axis
     ggtitle(plottitle) + # plot title
     geom_label_repel(max.overlaps = Inf)
 
-  plot_file_path <- paste0(out_dir, '/volcano_plots/', cell_line, '_', 
+  plot_file_path <- paste0(out_dir, '/volcano_plots/', group, '_', 
                            comparison, '.png')
   ggsave(plot_file_path)
   print(paste0('Volcano plot saved at: ', plot_file_path))
+  
+  interactive_plot <- HoverLocator(v_plot)
+  interactive_file_path <- paste0(out_dir, '/volcano_plots/0_hoverlocator/', 
+                                  group, '_', comparison, '.html')
+  htmlwidgets::saveWidget(interactive_plot, file = interactive_file_path)
+  print(paste0('Hover volcano plot saved at: ', interactive_file_path))
 }
 
 
-degs_venn_diagram <- function(compare_cells, treatment, direction){
-  # defining treatment comparison
-  if (treatment == '2v1') {
-    drugs <- 'MS177 vs DMSO'
-  } else if (treatment == '3v1'){
-    drugs <- 'TAZ vs DMSO'
-  } else if (treatment == '3v2'){
-    drugs <- 'TAZ vs MS177'
+## VENN DIAGRAM -------------------------------------------
+degs_venn_diagram <- function(comparison, group, direction){
+  # defining group
+  if (group == '2v1') {
+    spaced_group <- 'MS177 vs DMSO'
+  } else if (group == '3v1'){
+    spaced_group <- 'TAZ vs DMSO'
+  } else if (group == '3v2'){
+    spaced_group <- 'TAZ vs MS177'
+  } else if (group == 'cf5_vs_akata'){
+    spaced_group <- 'CF5 vs AKATA'
   }
   
   # naming
-  cells_file_name <- paste(compare_cells, collapse = "_")
-  drugs_sep <- unlist(strsplit(drugs, " ") )
-  drugs_folder <- paste(drugs_sep, collapse = "")
-  print(paste0('Cell lines: ', toupper(cells_file_name)))
-  print(paste0('Treatment comparison: ', drugs))
+  comparison_file_name <- paste(comparison, collapse = "_")
+  group_sep <- unlist(strsplit(spaced_group, " ") )
+  group_folder <- paste(group_sep, collapse = "")
+  print(paste0('Comparison: ', toupper(comparison_file_name)))
+  print(paste0('Group: ', spaced_group))
   
   # loading in DEG lists
   data_list <- list()
-  for (i in 1:length(compare_cells)){
-    df <- read.csv(paste0(pipe_dir, '/degs/', compare_cells[i], '_', treatment, 
+  for (i in 1:length(comparison)){
+    df <- read.csv(paste0(pipe_dir, '/degs/', comparison[i], '_', group, 
                           '_sig_', direction, '.csv'))
     genes <- df$gene_id
     data_list[[length(data_list) + 1]] <- genes
@@ -180,22 +199,29 @@ degs_venn_diagram <- function(compare_cells, treatment, direction){
   
   # create & save list of shared DEGs
   shared_genes <- as.data.frame(Reduce(intersect, data_list))
-  colnames(shared_genes) <- paste0(drugs_folder, '_', cells_file_name, '_', direction)
+  colnames(shared_genes) <- 'gene_id'
+  genes <- shared_genes$gene_id
+  annots <- select(org.Hs.eg.db, keys=genes, 
+                   columns="SYMBOL", keytype="ENSEMBL")
+  shared_genes <- merge(shared_genes, annots, by.x="gene_id", by.y="ENSEMBL")
+  shared_genes$SYMBOL <- ifelse(is.na(shared_genes$SYMBOL), 
+                                shared_genes$gene_id, shared_genes$SYMBOL)
+  
   csv_file_path <- paste0(pipe_dir, '/degs/shared/',
-                          cells_file_name, "_", direction, ".csv")
+                          comparison_file_name, "_", direction, ".csv")
   write.csv(shared_genes, csv_file_path, row.names = FALSE)
   print(paste0('Shared DEGs file save at: ', csv_file_path))
   
   # venn diagram
-  venn_title <- paste0(toupper(direction), "regulated genes in ", drugs)
-  ggVennDiagram(data_list, category.names = toupper(compare_cells)) +
+  venn_title <- paste0(toupper(direction), "regulated genes in ", spaced_group)
+  ggVennDiagram(data_list, category.names = toupper(comparison)) +
     labs(title = venn_title) + 
     scale_fill_gradient(low = "blue", high = "red") + 
     scale_x_continuous(expand = expansion(mult = .2)) +
     theme(plot.background = element_rect(fill = "white"))
-
-  venn_file <- paste0(out_dir, '/venn_diagrams/', drugs_folder, '/',
-                      cells_file_name, '_', direction, '.png')
+  
+  venn_file <- paste0(out_dir, '/venn_diagrams/', group_folder, '/',
+                      comparison_file_name, '_', direction, '.png')
   ggsave(venn_file)
   print(paste0('Venn diagram saved at: ', venn_file))
 }
