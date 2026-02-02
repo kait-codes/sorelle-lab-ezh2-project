@@ -27,7 +27,7 @@ setwd(code_dir)
 source('functions.R')
 
 using('BiocManager', 'dplyr', 'tidyr', 'ggplot2', 'ggrepel', 'ggVennDiagram', 
-      'Seurat', 'htmlwidgets')
+      'Seurat', 'htmlwidgets', 'stringr')
 bioc_using('Rsubread', 'edgeR', 'biomaRt', 'org.Hs.eg.db')
 
 ```
@@ -48,7 +48,6 @@ cell_lines <- c('akata', 'cf5', 'lcl', 'ibl1', 'mutu')
 treatment_comparisons <- c('2v1', '3v1', '3v2')
 
 # edgeR to find DEGs
-## ALREADY RUN
 for (x in cell_lines){
   fit <- edger_fit_genes(x)
   for (y in treatment_comparisons){
@@ -57,6 +56,8 @@ for (x in cell_lines){
 }
 
 # volcano plots
+## can label viral genes using label = 'viral'
+## or label custom gene list using label = 'custom' and gene = your_list
 for (x in cell_lines){
   for (y in treatment_comparisons){
     degs_volcano_plot(x, y)
@@ -69,7 +70,6 @@ for (y in treatment_comparisons){
   degs_venn_diagram(compare_cells, y, 'up')
   degs_venn_diagram(compare_cells, y, 'down')
 }
-
 
 ```
 
@@ -171,7 +171,8 @@ degs_venn_diagram(treatment_compare, cells_group, 'down')
 
 TODO as of 01/30:
 
-- volcano plot labeling with viral genes, etc...
-- gene ontology (enrichR)
+X volcano plot labeling with viral genes, etc...
+- gene ontology (enrichR) *need to filter out viral genes & ENSEMBL ids
 - make edgeR functions consistent with any experiment design
+- mid-way presentation
 

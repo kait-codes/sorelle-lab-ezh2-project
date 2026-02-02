@@ -1,35 +1,54 @@
 # INSTALL ----------------------------------------------------------------------
 using<-function(...) {
+  
   libs<-unlist(list(...))
-  req<-unlist(lapply(libs,require,character.only=TRUE))
+  req<-unlist(lapply(libs,
+                     require,
+                     character.only=TRUE))
   need<-libs[req==FALSE]
   if(length(need)>0){ 
     install.packages(need)
-    lapply(need,require,character.only=TRUE)
+    lapply(need,
+           require,
+           character.only=TRUE)
   }
 }
 
 bioc_using<-function(...) {
+  
   libs<-unlist(list(...))
-  req<-unlist(lapply(libs,require,character.only=TRUE))
+  req<-unlist(lapply(libs,
+                     require,
+                     character.only=TRUE))
   need<-libs[req==FALSE]
   if(length(need)>0){ 
     BiocManager::install(need)
-    lapply(need,require,character.only=TRUE)
+    lapply(need,
+           require,
+           character.only=TRUE)
   }
 }
 
 # EDGE R -----------------------------------------------------------------------
 edger_fit_genes <- function(cell_line){
-  counts <- read.csv(paste0(data_dir, '/exp_counts/counts_', cell_line, '.csv'))
+  
+  counts <- read.csv(paste0(data_dir, 
+                            '/exp_counts/counts_', 
+                            cell_line, 
+                            '.csv'))
   groups <- c(1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3)
   dge <- DGEList(counts, group = groups) # creating DGE list
   keep <- filterByExpr(dge) #filtering out low counts
   dge <- dge[keep, , keep.lib.sizes=FALSE]
   norm_counts <- normLibSizes(dge)
   
-  png(paste0(out_dir, "/mds_plots/", cell_line, ".png"), 
-      width = 800, height = 600, units = "px") 
+  png(paste0(out_dir, 
+             "/mds_plots/", 
+             cell_line, 
+             ".png"), 
+      width = 800, 
+      height = 600, 
+      units = "px") 
   plotMDS(norm_counts)
   dev.off()
   
@@ -37,28 +56,39 @@ edger_fit_genes <- function(cell_line){
                              stringsAsFactors = TRUE)
   design <- model.matrix(~ treatment, data = metadata_small)
   rownames(design) <- colnames(norm_counts)
-  y <- estimateDisp(norm_counts, design, robust=TRUE)
-  fit <- glmQLFit(y, design, robust=TRUE)
+  
+  y <- estimateDisp(norm_counts, 
+                    design, 
+                    robust=TRUE)
+  
+  fit <- glmQLFit(y, 
+                  design, 
+                  robust=TRUE)
   
   return(fit)
 }
 
-edger_degs <- function(fit, cell_line, comparison){
+edger_degs <- function(fit, 
+                       cell_line, 
+                       comparison){
+  
   # defining drug comparison
   if (comparison == '2v1') {
     lrt <- glmLRT(fit, coef=2)
     drugs <- 'MS177 vs DMSO'
+    
   } else if (comparison == '3v1'){
     lrt <- glmLRT(fit, coef=3)
     drugs <- 'TAZ vs DMSO'
+    
   } else if (comparison == '3v2'){
     lrt <- glmLRT(fit, contrast=c(0,-1,1))
     drugs <- 'TAZ vs MS177'
+    
   } else {
-    print('ERROR: Invalid comparison')
+    stop('ERROR: Invalid comparison')
   }
   
-  ## should put in condition so function stops here without valid comparison
   df <- as.data.frame(lrt)
   
   # converting ENSEMBL IDs to gene symbol
@@ -66,8 +96,11 @@ edger_degs <- function(fit, cell_line, comparison){
   annots <- select(org.Hs.eg.db, keys=genes, 
                    columns="SYMBOL", keytype="ENSEMBL")
   
-  df <- merge(df, annots, by.x="gene_id", by.y="ENSEMBL")
-  df$SYMBOL <- ifelse(is.na(df$SYMBOL), df$gene_id, df$SYMBOL)
+  df <- merge(df, annots, 
+              by.x="gene_id", by.y="ENSEMBL")
+  df$SYMBOL <- ifelse(is.na(df$SYMBOL), 
+                      df$gene_id, 
+                      df$SYMBOL)
   
   #removing genes with PValue = 0
   df <- filter(df, PValue != 0)
@@ -80,19 +113,42 @@ edger_degs <- function(fit, cell_line, comparison){
   # saving DEG lists
   ## all DEGs
   sorted_df <- df %>% arrange(PValue)
-  csv_file_path <- paste0(pipe_dir, '/degs/', cell_line, "_", comparison, ".csv")
+  csv_file_path <- paste0(pipe_dir, 
+                          '/degs/', 
+                          cell_line, 
+                          "_", 
+                          comparison, 
+                          ".csv")
   write.csv(sorted_df, csv_file_path, row.names = FALSE)
+  
   ## significant DEGs
   sig_degs <- filter(sorted_df, diffexpressed != 'NO')
-  sig_path <- paste0(pipe_dir, '/degs/', cell_line, "_", comparison, "_sig.csv")
+  sig_path <- paste0(pipe_dir, 
+                     '/degs/', 
+                     cell_line, 
+                     "_", 
+                     comparison, 
+                     "_sig.csv")
   write.csv(sig_degs, sig_path, row.names = FALSE)
+  
   ## significant up regulated DEGs
   up_degs <- filter(sorted_df, diffexpressed == 'UP')
-  up_path <- paste0(pipe_dir, '/degs/', cell_line, "_", comparison, "_sig_up.csv")
+  up_path <- paste0(pipe_dir, 
+                    '/degs/', 
+                    cell_line, 
+                    "_", 
+                    comparison, 
+                    "_sig_up.csv")
   write.csv(up_degs, up_path, row.names = FALSE)
+  
   ## significant down regulated DEGs
   down_degs <- filter(sorted_df, diffexpressed == 'DOWN')
-  down_path <- paste0(pipe_dir, '/degs/', cell_line, "_", comparison, "_sig_down.csv")
+  down_path <- paste0(pipe_dir, 
+                      '/degs/', 
+                      cell_line, 
+                      "_", 
+                      comparison, 
+                      "_sig_down.csv")
   write.csv(down_degs, down_path, row.names = FALSE)
   
   print(paste0('Cell line: ', cell_line))
@@ -102,81 +158,150 @@ edger_degs <- function(fit, cell_line, comparison){
   return(df)
 }
 
+
+
 # PLOTS ------------------------------------------------------------------------
 ## VOLCANO PLOT -------------------------------------------
-degs_volcano_plot <- function(group, comparison){
-  # defining drug comparison
+degs_volcano_plot <- function(group, 
+                              comparison, 
+                              label = 10, 
+                              genes = NA, 
+                              hover = FALSE){
+  
+  # defining comparison
   if (comparison == '2v1') {
     title1 <- paste0(toupper(group), ' cells')
     title2 <- 'MS177 vs DMSO'
+    
   } else if (comparison == '3v1'){
     title1 <- paste0(toupper(group), ' cells')
     title2 <- 'TAZ vs DMSO'
+    
   } else if (comparison == '3v2'){
     title1 <- paste0(toupper(group), ' cells')
     title2 <- 'TAZ vs MS177'
+    
   } else if(comparison == 'cf5_vs_akata'){
     title1 <- paste0(toupper(group), ' treatment')
     title2 <- 'CF5 vs AKATA cells'
+    
   } else {
-    print('ERROR: Invalid comparison')
+    stop('ERROR: Invalid comparison')
+    
   }
   
   print(paste0('Group: ', title1))
   print(paste0('Comparison: ', title2))
   
   # read in data
-  df <- read.csv(paste0(pipe_dir, '/degs/', group, '_', comparison, '.csv'))
+  df <- read.csv(paste0(pipe_dir, 
+                        '/degs/', 
+                        group, 
+                        '_', 
+                        comparison, 
+                        '.csv'))
   
-  # create a new column for the names of the top 10 DEGs
-  df$delabel <- ifelse(df$SYMBOL %in% head(df[order(df$PValue), "SYMBOL"], 10), 
-                       df$SYMBOL, NA)
+  # create a new column for labeling points based 
+  # on label argument & optional gene list
+  if (is.numeric(label) == TRUE){
+    df$delabel <- ifelse(df$SYMBOL %in% head(df[order(df$PValue), "SYMBOL"], label), 
+                         df$SYMBOL, 
+                         NA)
+    label_title <- paste0('top', label)
+    
+  } else if (label == 'viral' | label == 'virus'){
+    df$delabel <- ifelse(str_detect(df$SYMBOL, '^gene') == TRUE,
+                         df$SYMBOL,
+                         NA)
+    label_title <- label
+    
+  } else if (label == 'custom'){
+    df$delabel <- ifelse(df$SYMBOL %in% genes, 
+                         df$SYMBOL, 
+                         NA)
+    label_title <- substitute(genes)
+    
+  } else{
+    label <- 10
+    label_title <- 'top10'
+    print('ERROR: Invalid label arguement. Default top 10 genes used.')
+  }
 
-  plottitle <- paste0(title1, " in ", title2) #FIXME
-  xoptions <- c(ceiling(max(abs(df$logFC))) + 1, 10)
-  xmax <- max(xoptions)
-  yoptions <- c(round(max(-log10(df$PValue)), digits = -1) + 50, 100)
-  ymax <- max(yoptions)
+  plottitle <- paste0(title1, " in ", title2) # plot title
+  
+  xmax <- c(ceiling(max(abs(df$logFC))) + 1, 10) %>% 
+    max() # determining x axis limits
+  ymax <- c(round(max(-log10(df$PValue)), digits = -1) + 50, 100) %>% 
+    max() # determining y axis limits
   
   rownames(df) <- make.unique(as.character(df$SYMBOL))
 
   # volcano plot
-  v_plot <- ggplot(data = df, aes(x = logFC, y = -log10(PValue), 
-                                  col = diffexpressed, label = delabel)) +
-    geom_vline(xintercept = c(-logfc_limit, logfc_limit), col = "gray", linetype = 'dashed') +
-    geom_hline(yintercept = -log10(pvalue_limit), col = "gray", linetype = 'dashed') +
+  v_plot <- ggplot(data = df, aes(x = logFC, 
+                                  y = -log10(PValue), 
+                                  col = diffexpressed, 
+                                  label = delabel)) +
+    geom_vline(xintercept = c(-logfc_limit, logfc_limit), 
+               col = "gray", 
+               linetype = 'dashed') +
+    geom_hline(yintercept = -log10(pvalue_limit), 
+               col = "gray", 
+               linetype = 'dashed') +
     geom_point(size = 2) +
-    scale_color_manual(values = c("#00AFBB", "grey", "#bb0c00"), # set the colors
+    scale_color_manual(values = c("#00AFBB", "grey", "#bb0c00"),
                        labels = c("Downregulated", "Not significant", "Upregulated")) +
-    coord_cartesian(ylim = c(0, ymax), xlim = c(-xmax, xmax)) +
-    labs(color = 'Severe', # legend title
-         x = expression("log"[2]*"FC"), y = expression("-log"[10]*"p-value")) +
-    scale_x_continuous(breaks = seq(-xmax, xmax, 2)) + # customize breaks in the x axis
-    ggtitle(plottitle) + # plot title
+    coord_cartesian(ylim = c(0, ymax), 
+                    xlim = c(-xmax, xmax)) +
+    labs(color = 'Severe', 
+         x = expression("log"[2]*"FC"), 
+         y = expression("-log"[10]*"p-value")) +
+    scale_x_continuous(breaks = seq(-xmax, xmax, 2)) +
+    ggtitle(plottitle) +
     geom_label_repel(max.overlaps = Inf)
 
-  plot_file_path <- paste0(out_dir, '/volcano_plots/', group, '_', 
-                           comparison, '.png')
+  plot_file_path <- paste0(out_dir, 
+                           '/volcano_plots/', 
+                           group, 
+                           '_', 
+                           comparison,
+                           '_',
+                           label_title,
+                           '.png')
+  
   ggsave(plot_file_path)
   print(paste0('Volcano plot saved at: ', plot_file_path))
   
-  interactive_plot <- HoverLocator(v_plot)
-  interactive_file_path <- paste0(out_dir, '/volcano_plots/0_hoverlocator/', 
-                                  group, '_', comparison, '.html')
-  htmlwidgets::saveWidget(interactive_plot, file = interactive_file_path)
-  print(paste0('Hover volcano plot saved at: ', interactive_file_path))
+  if (hover == TRUE){
+    interactive_plot <- HoverLocator(v_plot)
+    interactive_file_path <- paste0(out_dir, 
+                                    '/volcano_plots/0_hoverlocator/', 
+                                    group, 
+                                    '_', 
+                                    comparison, 
+                                    '.html')
+    
+    htmlwidgets::saveWidget(interactive_plot, file = interactive_file_path)
+    print(paste0('Hover volcano plot saved at: ', interactive_file_path))
+  }
+  
 }
 
 
+
 ## VENN DIAGRAM -------------------------------------------
-degs_venn_diagram <- function(comparison, group, direction){
+degs_venn_diagram <- function(comparison, 
+                              group, 
+                              direction){
   # defining group
   if (group == '2v1') {
     spaced_group <- 'MS177 vs DMSO'
+    
   } else if (group == '3v1'){
     spaced_group <- 'TAZ vs DMSO'
+    
   } else if (group == '3v2'){
     spaced_group <- 'TAZ vs MS177'
+    
   } else if (group == 'cf5_vs_akata'){
     spaced_group <- 'CF5 vs AKATA'
   }
@@ -185,43 +310,67 @@ degs_venn_diagram <- function(comparison, group, direction){
   comparison_file_name <- paste(comparison, collapse = "_")
   group_sep <- unlist(strsplit(spaced_group, " ") )
   group_folder <- paste(group_sep, collapse = "")
+  
   print(paste0('Comparison: ', toupper(comparison_file_name)))
   print(paste0('Group: ', spaced_group))
   
   # loading in DEG lists
   data_list <- list()
   for (i in 1:length(comparison)){
-    df <- read.csv(paste0(pipe_dir, '/degs/', comparison[i], '_', group, 
-                          '_sig_', direction, '.csv'))
+    df <- read.csv(paste0(pipe_dir, 
+                          '/degs/', 
+                          comparison[i], 
+                          '_', 
+                          group, 
+                          '_sig_', 
+                          direction, 
+                          '.csv'))
     genes <- df$gene_id
     data_list[[length(data_list) + 1]] <- genes
   }
   
-  # create & save list of shared DEGs
+  # create & save list of shared DEGs with gene symbols included
   shared_genes <- as.data.frame(Reduce(intersect, data_list))
   colnames(shared_genes) <- 'gene_id'
   genes <- shared_genes$gene_id
   annots <- select(org.Hs.eg.db, keys=genes, 
                    columns="SYMBOL", keytype="ENSEMBL")
-  shared_genes <- merge(shared_genes, annots, by.x="gene_id", by.y="ENSEMBL")
+  shared_genes <- merge(shared_genes, annots, 
+                        by.x="gene_id", by.y="ENSEMBL")
   shared_genes$SYMBOL <- ifelse(is.na(shared_genes$SYMBOL), 
-                                shared_genes$gene_id, shared_genes$SYMBOL)
+                                shared_genes$gene_id, 
+                                shared_genes$SYMBOL)
   
-  csv_file_path <- paste0(pipe_dir, '/degs/shared/',
-                          comparison_file_name, "_", direction, ".csv")
+  csv_file_path <- paste0(pipe_dir, 
+                          '/degs/shared/',
+                          comparison_file_name, 
+                          "_", 
+                          direction, 
+                          ".csv")
+  
   write.csv(shared_genes, csv_file_path, row.names = FALSE)
-  print(paste0('Shared DEGs file save at: ', csv_file_path))
+  print(paste0('Shared DEGs file saved at: ', csv_file_path))
   
   # venn diagram
-  venn_title <- paste0(toupper(direction), "regulated genes in ", spaced_group)
+  venn_title <- paste0(toupper(direction), 
+                       "regulated genes in ", 
+                       spaced_group)
+  
   ggVennDiagram(data_list, category.names = toupper(comparison)) +
     labs(title = venn_title) + 
-    scale_fill_gradient(low = "blue", high = "red") + 
+    scale_fill_gradient(low = "blue", 
+                        high = "red") + 
     scale_x_continuous(expand = expansion(mult = .2)) +
     theme(plot.background = element_rect(fill = "white"))
   
-  venn_file <- paste0(out_dir, '/venn_diagrams/', group_folder, '/',
-                      comparison_file_name, '_', direction, '.png')
+  venn_file <- paste0(out_dir, 
+                      '/venn_diagrams/', 
+                      group_folder, 
+                      '/',
+                      comparison_file_name, 
+                      '_', 
+                      direction, 
+                      '.png')
   ggsave(venn_file)
   print(paste0('Venn diagram saved at: ', venn_file))
 }
