@@ -203,7 +203,7 @@ degs_volcano_plot <- function(group,
   
   # create a new column for labeling points based 
   # on label argument & optional gene list
-  if (is.numeric(label) == TRUE){
+  if (is.numeric(label)){
     df$delabel <- ifelse(df$SYMBOL %in% head(df[order(df$PValue), "SYMBOL"], label), 
                          df$SYMBOL, 
                          NA)
@@ -374,3 +374,163 @@ degs_venn_diagram <- function(comparison,
   ggsave(venn_file)
   print(paste0('Venn diagram saved at: ', venn_file))
 }
+
+
+## MSigDB PATHWAY ENRICHMENT ANALYSIS DOT PLOT --------------
+msigdb_pathway_enrichment_analysis <- function(group, 
+                                               comparison, 
+                                               collection = 'H',
+                                               subcollection = NULL,
+                                               padj_cutoff = 0.05,
+                                               genecount_cutoff = 5){
+  
+  # defining comparison
+  if (comparison == '2v1') {
+    title1 <- paste0(toupper(group), ' cells')
+    title2 <- 'MS177 vs DMSO'
+    
+  } else if (comparison == '3v1'){
+    title1 <- paste0(toupper(group), ' cells')
+    title2 <- 'TAZ vs DMSO'
+    
+  } else if (comparison == '3v2'){
+    title1 <- paste0(toupper(group), ' cells')
+    title2 <- 'TAZ vs MS177'
+    
+  } else if (comparison == 'cf5_vs_akata'){
+    title1 <- paste0(toupper(group), ' treatment')
+    title2 <- 'CF5 vs AKATA cells'
+    
+  } else {
+    stop('ERROR: Invalid comparison')
+    
+  }
+  
+  
+  # getting MSigDB collection title
+  collections <- msigdbr_collections()
+  if (!is.null(subcollection)){
+    collection_name <- filter(collections, gs_collection == collection &
+                              gs_subcollection == subcollection) %>%
+      select(gs_collection_name) %>% 
+      unlist() %>%
+      paste(collapse = ".")
+    pathway_title <- collection
+  } else {
+    collection_name <- filter(collections, gs_collection == collection) %>%
+      select(gs_collection_name) %>% 
+      unlist() %>%
+      paste(collapse = ".")
+    pathway_title <- paste0(collection, '_', subcollection)
+  }
+  if (collection_name == ""){
+    stop('ERROR: Invalid MSigDB gene set collection and/or subcollection')
+  }
+  
+  print(paste0('Group: ', title1))
+  print(paste0('Comparison: ', title2))
+  print(paste0('MSigDB collection: ', collection_name))
+  
+  # read in data & filter for human genes only
+  df <- read.csv(paste0(pipe_dir, 
+                        '/degs/', 
+                        group, 
+                        '_', 
+                        comparison, 
+                        '_sig.csv'))
+  df_human <- filter(df, str_detect(df$gene_id, '^ENSG') == TRUE)
+  deg_results_list <- split(df_human, df_human$diffexpressed)
+  
+  # fetch gMSigDB collection
+  gene_sets_df <- msigdbr(species = 'Homo sapiens', 
+                          collection = collection, 
+                          subcollection = subcollection)
+  gene_sets <- gene_sets_df %>% select(gs_name, ensembl_gene)
+  
+  # get background genes
+  background_genes <- read.csv(file.path(data_dir, 'exp_counts/counts_all.csv')) %>% 
+    select(1)
+  
+  # run clusterProfiler on each sub-dataframe
+  res <- lapply(names(deg_results_list),
+                function(x) enricher(gene = deg_results_list[[x]]$gene_id,
+                                     TERM2GENE = gene_sets,
+                                     universe = background_genes,
+                                     pvalueCutoff = padj_cutoff,
+                                     minGSSize = genecount_cutoff,
+                                     qvalueCutoff = 0.2))
+  names(res) <- names(deg_results_list)
+  
+  # convert the enrichResults to a dataframe with the pathways
+  res_df <- lapply(names(res), function(x) rbind(res[[x]]@result))
+  names(res_df) <- names(res)
+  res_df <- do.call(rbind, res_df) %>% 
+    mutate(minuslog10padj = -log10(p.adjust))
+  # filter for significance
+  res_df_sig <- res_df %>% 
+    filter(p.adjust < padj_cutoff & Count > genecount_cutoff) 
+  # save results
+  enrich_file_path <- paste0(pipe_dir, 
+                             '/pea/', 
+                             group, 
+                             '_', 
+                             comparison,
+                             '_',
+                             collection,
+                             '.csv')
+  write.csv(res_df_sig, enrich_file_path)
+  
+  # visualizing 
+  results_up <- res$UP
+  title_up <- paste0("MSigDB ", 
+                     collection_name, 
+                     "\nUpregulated Genes\n", 
+                     title1, 
+                     " in ", 
+                     title2)
+  dot_up <- dotplot(results_up, 
+                    showCategory = 15,
+                    title = title_up)
+  file_path_up <- paste0(out_dir, 
+                         '/pea/', 
+                         group, 
+                         '_', 
+                         comparison,
+                         '_',
+                         pathway_title,
+                         'up.png')
+  ggsave(file_path_up)
+  
+  results_down <- res$DOWN
+  title_down <- paste0("MSigDB ", 
+                       collection_name, 
+                       "\nDownregulated Genes\n", 
+                       title1, 
+                       " in ", 
+                       title2)
+  dot_down <- dotplot(results_down, 
+                      showCategory = 15,
+                      title = title_down)
+  file_path_down <- paste0(out_dir, 
+                           '/pea/', 
+                           group, 
+                           '_', 
+                           comparison,
+                           '_',
+                           pathway_title,
+                           'down.png')
+  ggsave(file_path_down)
+  
+  
+  print(paste0('PEA plots saved at: ', out_dir, '/pea/'))
+  
+  ## OPTIONAL: uncomment to allow for further plot making
+  #return(res)
+}
+
+
+
+
+
+
+
