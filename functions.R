@@ -257,7 +257,8 @@ degs_volcano_plot <- function(group,
          y = expression("-log"[10]*"p-value")) +
     scale_x_continuous(breaks = seq(-xmax, xmax, 2)) +
     ggtitle(plottitle) +
-    geom_label_repel(max.overlaps = Inf)
+    geom_label_repel(max.overlaps = Inf) +
+    theme_bw()
 
   plot_file_path <- paste0(out_dir, 
                            '/volcano_plots/', 
@@ -412,13 +413,13 @@ msigdb_pathway_enrichment_analysis <- function(group,
   if (!is.null(subcollection)){
     collection_name <- filter(collections, gs_collection == collection &
                               gs_subcollection == subcollection) %>%
-      select(gs_collection_name) %>% 
+      dplyr::select(gs_collection_name) %>% 
       unlist() %>%
       paste(collapse = ".")
     pathway_title <- collection
   } else {
     collection_name <- filter(collections, gs_collection == collection) %>%
-      select(gs_collection_name) %>% 
+      dplyr::select(gs_collection_name) %>% 
       unlist() %>%
       paste(collapse = ".")
     pathway_title <- paste0(collection, '_', subcollection)
@@ -438,18 +439,18 @@ msigdb_pathway_enrichment_analysis <- function(group,
                         '_', 
                         comparison, 
                         '_sig.csv'))
-  df_human <- filter(df, str_detect(df$gene_id, '^ENSG') == TRUE)
-  deg_results_list <- split(df_human, df_human$diffexpressed)
+  #df_human <- filter(df, str_detect(df$gene_id, '^ENSG') == TRUE)
+  deg_results_list <- split(df, df$diffexpressed)
   
   # fetch gMSigDB collection
   gene_sets_df <- msigdbr(species = 'Homo sapiens', 
                           collection = collection, 
                           subcollection = subcollection)
-  gene_sets <- gene_sets_df %>% select(gs_name, ensembl_gene)
+  gene_sets <- gene_sets_df %>% dplyr::select(gs_name, ensembl_gene)
   
   # get background genes
   background_genes <- read.csv(file.path(data_dir, 'exp_counts/counts_all.csv')) %>% 
-    select(1)
+    dplyr::select(1)
   
   # run clusterProfiler on each sub-dataframe
   res <- lapply(names(deg_results_list),
@@ -498,7 +499,7 @@ msigdb_pathway_enrichment_analysis <- function(group,
                          comparison,
                          '_',
                          pathway_title,
-                         'up.png')
+                         '_up.png')
   ggsave(file_path_up)
   
   results_down <- res$DOWN
@@ -518,7 +519,7 @@ msigdb_pathway_enrichment_analysis <- function(group,
                            comparison,
                            '_',
                            pathway_title,
-                           'down.png')
+                           '_down.png')
   ggsave(file_path_down)
   
   

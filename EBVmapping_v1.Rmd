@@ -58,7 +58,7 @@ pvalue_limit <- 0.05
 
 
 # COMPARING TREATMENT GROUPS WITHIN CELL LINE
-cell_lines <- c('akata', 'cf5', 'lcl', 'ibl1', 'mutu')
+cell_lines <- c('akata', 'cf5', 'ibl1', 'lcl', 'mutu')
 treatment_comparisons <- c('2v1', '3v1', '3v2')
 
 
@@ -92,10 +92,11 @@ for (y in treatment_comparisons){
 # pathway enrichment analysis bar plots using MSigDB
 ## can change collection & subcollection
 ## use msigdbr_collections() to view options
-msigdb_pathway_enrichment_analysis('mutu', '2v1')
+msigdb_pathway_enrichment_analysis('lcl', '2v1')
+
 ```
 
-```{r getting DEGs for akata vs cf5}
+```{r FIXME: getting DEGs for akata vs cf5}
 
 counts <- read.csv(paste0(data_dir, '/exp_counts/counts_all.csv'))
 counts <- counts[,1:25]
@@ -176,7 +177,7 @@ cells_group <- 'cf5_vs_akata'
 
 # volcano plots
 for (x in treatments){
-  degs_volcano_plot(x, cells_group)
+  degs_volcano_plot(x, cells_group, 'viral')
 }
 
 
@@ -188,13 +189,129 @@ degs_venn_diagram(treatment_compare, cells_group, 'down')
 
 
 # MSigDB PEA
-msigdb_pathway_enrichment_analysis('ms177', cells_group)
+msigdb_pathway_enrichment_analysis('dmso', cells_group)
 ```
 
+```{r analyzing viral genes MS177 vs DMSO}
+# making data frame of significantly up/down regulated viral genes annotated
+
+viral_degs <- data.frame()
+for (x in cell_lines){
+  df_up <- read.csv(paste0(pipe_dir, '/degs/', x, '_2v1_sig_up.csv'))
+  df_up <- dplyr::select(df_up, gene_id)
+  df_up <- filter(df_up, str_detect(df_up$gene_id, '^ENSG') == FALSE)
+  colnames(df_up) <- paste0(x, '_up')
+  df_up_long <- pivot_longer(df_up, 1, 
+                        names_to = 'cell',
+                        values_to = 'gene_id')
+  viral_degs <- rbind(viral_degs, df_up_long)
+  
+  df_down <- read.csv(paste0(pipe_dir, '/degs/', x, '_2v1_sig_down.csv'))
+  df_down <- dplyr::select(df_down, gene_id)
+  df_down <- filter(df_down, str_detect(df_down$gene_id, '^ENSG') == FALSE)
+  colnames(df_down) <- paste0(x, '_down')
+  df_down_long <- pivot_longer(df_down, 1, 
+                        names_to = 'cell',
+                        values_to = 'gene_id')
+  viral_degs <- rbind(viral_degs, df_down_long)
+  
+  print(paste0(x, ' upregulated viral genes: ', nrow(df_up)))
+  print(paste0(x, ' downregulated viral genes: ', nrow(df_down)))
+}
+
+ebv_annot <- read.csv(file.path(data_dir, 'ebv_annot.csv'))
+df_merge <- merge(viral_degs, ebv_annot, by.x='gene_id', by.y='gene_id', all.x = TRUE)
+
+df_merge <- dplyr::select(df_merge, cell, gene_id, everything())
+df_merge$kinetics <- factor(df_merge$kinetics,
+                            levels = c('early', 'leaky', 'late', 'latent'))
+
+df_merge <- separate(df_merge, 1, into = c('cell', 'direction'), sep = '_')
+
+
+#write.csv(df_merge, file.path(pipe_dir, 'degs/viral_sig_2v1.csv'), 
+#          row.names = FALSE)
+
+df_pretty <- df_merge %>% mutate(cell = toupper(cell))
+df_pretty <- df_pretty %>% mutate(kinetics = str_to_sentence(kinetics))
+df_pretty$kinetics <- factor(df_pretty$kinetics,
+                            levels = c('Early', 'Leaky', 'Late', 'Latent'))
+df_pretty <- df_pretty %>% mutate(direction = ifelse(direction == 'up', 'Upregulated', 'Downregulated'))
+
+plottitle <- 'Differentially Expressed EBV Genes in MS177 vs DMSO'
+ggplot(df_pretty, aes(fill = kinetics, x = cell)) +
+  geom_bar() +
+  labs(title = plottitle,
+       x = 'Cell Line',
+       y = 'Gene Count',
+       fill = 'Kinetics') +
+  facet_wrap(~ direction) +
+  theme_bw() 
+
+ggsave(file.path(out_dir, 'ebv_genes_2v1.png'))
+```
+
+```{r analyzing viral genes TAZ vs DMSO}
+# making data frame of significantly up/down regulated viral genes annotated
+
+viral_degs <- data.frame()
+for (x in cell_lines){
+  df_up <- read.csv(paste0(pipe_dir, '/degs/', x, '_3v1_sig_up.csv'))
+  df_up <- dplyr::select(df_up, gene_id)
+  df_up <- filter(df_up, str_detect(df_up$gene_id, '^ENSG') == FALSE)
+  colnames(df_up) <- paste0(x, '_up')
+  df_up_long <- pivot_longer(df_up, 1, 
+                        names_to = 'cell',
+                        values_to = 'gene_id')
+  viral_degs <- rbind(viral_degs, df_up_long)
+  
+  df_down <- read.csv(paste0(pipe_dir, '/degs/', x, '_3v1_sig_down.csv'))
+  df_down <- dplyr::select(df_down, gene_id)
+  df_down <- filter(df_down, str_detect(df_down$gene_id, '^ENSG') == FALSE)
+  colnames(df_down) <- paste0(x, '_down')
+  df_down_long <- pivot_longer(df_down, 1, 
+                        names_to = 'cell',
+                        values_to = 'gene_id')
+  viral_degs <- rbind(viral_degs, df_down_long)
+  
+  print(paste0(x, ' upregulated viral genes: ', nrow(df_up)))
+  print(paste0(x, ' downregulated viral genes: ', nrow(df_down)))
+}
+
+ebv_annot <- read.csv(file.path(data_dir, 'ebv_annot.csv'))
+df_merge <- merge(viral_degs, ebv_annot, by.x='gene_id', by.y='gene_id', all.x = TRUE)
+
+df_merge <- dplyr::select(df_merge, cell, gene_id, everything())
+df_merge$kinetics <- factor(df_merge$kinetics,
+                            levels = c('early', 'leaky', 'late', 'latent'))
+
+df_merge <- separate(df_merge, 1, into = c('cell', 'direction'), sep = '_')
+
+
+write.csv(df_merge, file.path(pipe_dir, 'degs/viral_sig_3v1.csv'), 
+          row.names = FALSE)
+
+df_pretty <- df_merge %>% mutate(cell = toupper(cell))
+df_pretty <- df_pretty %>% mutate(kinetics = str_to_sentence(kinetics))
+df_pretty$kinetics <- factor(df_pretty$kinetics,
+                            levels = c('Early', 'Leaky', 'Late', 'Latent'))
+df_pretty <- df_pretty %>% mutate(direction = ifelse(direction == 'up', 'Upregulated', 'Downregulated'))
+
+plottitle <- 'Differentially Expressed EBV Genes in TAZ vs DMSO'
+ggplot(df_pretty, aes(fill = kinetics, x = cell)) +
+  geom_bar() +
+  labs(title = plottitle,
+       x = 'Cell Line',
+       y = 'Gene Count',
+       fill = 'Kinetics') +
+  facet_wrap(~ direction) +
+  theme_bw() 
+
+ggsave(file.path(out_dir, 'ebv_genes_3v1.png'))
+```
 
 TODO as of 02/02:
 
-- gene ontology (other types besides MSigDB? viral genes?)
 - make edgeR functions consistent with any experiment design
 - mid-way presentation
 
