@@ -387,6 +387,8 @@ degs_venn_diagram <- function(comparison,
   
   csv_file_path <- paste0(pipe_dir, 
                           '/degs/shared/',
+                          group,
+                          "_",
                           comparison_file_name, 
                           "_", 
                           direction, 
@@ -467,13 +469,13 @@ msigdb_pathway_enrichment_analysis <- function(group,
       dplyr::select(gs_collection_name) %>% 
       unlist() %>%
       paste(collapse = ".")
-    pathway_title <- collection
+    pathway_title <- paste0(collection, '_', subcollection)
   } else {
     collection_name <- filter(collections, gs_collection == collection) %>%
       dplyr::select(gs_collection_name) %>% 
       unlist() %>%
       paste(collapse = ".")
-    pathway_title <- paste0(collection, '_', subcollection)
+    pathway_title <- collection
   }
   if (collection_name == ""){
     stop('ERROR: Invalid MSigDB gene set collection and/or subcollection')
@@ -532,54 +534,68 @@ msigdb_pathway_enrichment_analysis <- function(group,
                              collection,
                              '.csv')
   write.csv(res_df_sig, enrich_file_path)
+  print(paste0('PEA results saved at: ', enrich_file_path))
   
   # visualizing results for up & down regulated genes
   results_up <- res$UP
   title_up <- paste0("MSigDB ", 
-                     collection_name, 
-                     "\nUpregulated Genes\n", 
-                     title1, 
-                     " in ", 
-                     title2)
+                      collection_name, 
+                      "\nUpregulated Genes\n", 
+                      title1, 
+                      " in ", 
+                      title2)
   dot_up <- dotplot(results_up, 
                     showCategory = 15,
                     title = title_up)
   file_path_up <- paste0(out_dir, 
-                         '/pea/', 
-                         group, 
-                         '_', 
-                         comparison,
-                         '_',
-                         pathway_title,
-                         '_up.png')
-  ggsave(file_path_up)
+                          '/pea/', 
+                          group, 
+                          '_', 
+                          comparison,
+                          '_',
+                          pathway_title,
+                          '_up.png')
+  
+  if (length(dot_up[["data"]][["ID"]]) == 0) {
+    print("No UPregulated pathways")
+    file.remove(file_path_up)
+  } else {
+    ggsave(file_path_up)
+  }
+
   
   results_down <- res$DOWN
   title_down <- paste0("MSigDB ", 
-                       collection_name, 
-                       "\nDownregulated Genes\n", 
-                       title1, 
-                       " in ", 
-                       title2)
+                        collection_name, 
+                        "\nDownregulated Genes\n", 
+                        title1, 
+                        " in ", 
+                        title2)
   dot_down <- dotplot(results_down, 
                       showCategory = 15,
                       title = title_down)
   file_path_down <- paste0(out_dir, 
-                           '/pea/', 
-                           group, 
-                           '_', 
-                           comparison,
-                           '_',
-                           pathway_title,
-                           '_down.png')
-  ggsave(file_path_down)
+                            '/pea/', 
+                            group, 
+                            '_', 
+                            comparison,
+                            '_',
+                            pathway_title,
+                            '_down.png')
+    
+  if (length(dot_down[["data"]][["ID"]]) == 0) {
+    print("No DOWNregulated pathways")
+    file.remove(file_path_down)
+  } else {
+    ggsave(file_path_down)
+  }
   
   
   print(paste0('PEA plots saved at: ', out_dir, '/pea/'))
   
   ## OPTIONAL: uncomment to allow for further plot making besides dot plot
   #return(res)
-  
+
   ## or uncomment to further edit the dot plots in R
   #plot_list <- list(dot_up, dot_down)
   #return(plot_list)
