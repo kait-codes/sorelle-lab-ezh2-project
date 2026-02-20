@@ -182,6 +182,7 @@ edger_degs <- function(fit,
   print(paste0('Cell line: ', cell_line))
   print(paste0('Comparison: ', drugs))
   print(paste0('DEG files saved at: ', pipe_dir, '/degs'))
+  print('---------------------------------------------------------------------')
   
   # OPTIONAL: use DEGs directly from this function for further analysis
   # I code in the intermediates as saved .csv files so I don't do this
@@ -325,8 +326,9 @@ degs_volcano_plot <- function(group,
     print(paste0('Hover volcano plot saved at: ', interactive_file_path))
   }
   
+  print('---------------------------------------------------------------------')
   ## OPTIONAL: uncomment to continue working with the plot in R
-  #return(v_plot)
+  # return(v_plot)
   
 }
 
@@ -420,6 +422,7 @@ degs_venn_diagram <- function(comparison,
                       '.png')
   ggsave(venn_file)
   print(paste0('Venn diagram saved at: ', venn_file))
+  print('---------------------------------------------------------------------')
 }
 
 
@@ -592,6 +595,7 @@ msigdb_pathway_enrichment_analysis <- function(group,
   
   
   print(paste0('PEA plots saved at: ', out_dir, '/pea/'))
+  print('---------------------------------------------------------------------')
   
   ## OPTIONAL: uncomment to allow for further plot making besides dot plot
   #return(res)
@@ -600,5 +604,163 @@ msigdb_pathway_enrichment_analysis <- function(group,
   #plot_list <- list(dot_up, dot_down)
   #return(plot_list)
 }
+
+
+
+## MSigDB GENE SET ENRICHMENT ANALYSIS ----------------------
+
+# can change collection & subcollection
+# use msigdbr_collections() to view options
+
+## I referenced the BioStat Squid tutorial:
+## Easy Gene Set Enrichment Analysis in R with fgsea()
+
+msigdb_gsea <- function(group, 
+                        comparison, 
+                        collection = 'H',
+                        subcollection = NULL){
+  
+  # defining comparison for nice title
+  if (comparison == '2v1') {
+    title1 <- paste0(toupper(group), ' cells')
+    title2 <- 'MS177 vs DMSO'
+    
+  } else if (comparison == '3v1'){
+    title1 <- paste0(toupper(group), ' cells')
+    title2 <- 'TAZ vs DMSO'
+    
+  } else if (comparison == '3v2'){
+    title1 <- paste0(toupper(group), ' cells')
+    title2 <- 'TAZ vs MS177'
+    
+  } else if (comparison == 'cf5_vs_akata'){
+    title1 <- paste0(toupper(group), ' treatment')
+    title2 <- 'CF5 vs AKATA cells'
+    
+  } else {
+    stop('ERROR: Invalid comparison')
+    
+  }
+  
+  
+  # getting MSigDB collection title
+  collections <- msigdbr_collections()
+  if (!is.null(subcollection)){
+    collection_name <- filter(collections, gs_collection == collection &
+                                gs_subcollection == subcollection) %>%
+      dplyr::select(gs_collection_name) %>% 
+      unlist() %>%
+      paste(collapse = ".")
+    pathway_title <- paste0(collection, '_', subcollection)
+  } else {
+    collection_name <- filter(collections, gs_collection == collection) %>%
+      dplyr::select(gs_collection_name) %>% 
+      unlist() %>%
+      paste(collapse = ".")
+    pathway_title <- collection
+  }
+  if (collection_name == ""){
+    stop('ERROR: Invalid MSigDB gene set collection and/or subcollection')
+  }
+  
+  print(paste0('Group: ', title1))
+  print(paste0('Comparison: ', title2))
+  print(paste0('MSigDB collection: ', collection_name))
+  
+  # fetch MSigDB collection
+  gene_sets_df <- msigdbr(species = 'Homo sapiens', 
+                          collection = collection, 
+                          subcollection = subcollection)
+  gene_sets <- gene_sets_df %>%
+    split(x = .$ensembl_gene, f = .$gs_name)
+  
+  # read in DEG list
+  df <- read.csv(paste0(pipe_dir, 
+                        '/degs/', 
+                        group, 
+                        '_', 
+                        comparison, 
+                        '.csv'))
+  
+  # filter out viral genes & fix gene ids
+  df <- df %>% dplyr::filter(str_detect(gene_id, "^ENSG"))
+  df$gene_id <- make.unique(as.character(df$gene_id))
+  
+  # rank genes by logFC & p-value
+  rankings <- sign(df$logFC)*(-log10(df$PValue))
+  names(rankings) <- df$gene_id
+  
+  # fix infinite values caused by small p-values
+  max_ranking <- max(rankings[is.finite(rankings)])
+  min_ranking <- min(rankings[is.finite(rankings)])
+  rankings <- replace(rankings, rankings > max_ranking, max_ranking * 10)
+  rankings <- replace(rankings, rankings < min_ranking, min_ranking * 10)
+  
+  rankings <- sort(rankings, decreasing = TRUE) #sort genes by ranking
+  # plot(rankings) #uncomment to check rank sort
+  
+  ## uncomment & adjust to check rankings of specific genes
+  ## (currently first 50 by alphabetical order)
+  # ranked_genes_plot <- ggplot(data.frame(gene_symbol = names(rankings)[1:50], 
+  #                                   ranks = rankings[1:50]), 
+  #                        aes(gene_symbol, ranks)) + 
+  #   geom_point() +
+  #   theme_classic() + 
+  #   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  # ranked_genes_plot
+  
+  GSEAres <- fgsea(pathways = gene_sets,
+                   stats = rankings,
+                   scoreType = 'std', #in this case we have both pos and neg rankings
+                   #if only pos or neg, set to 'pos','neg'
+                   minSize = 10,
+                   maxSize = 500,
+                   nproc = 1) #for parallelisation
+  
+  # select only independent pathways, removing redundancies/similar pathways
+  collapsedPathways <- collapsePathways(GSEAres[order(pval)][pval < 0.05], 
+                                        gene_sets, rankings)
+  mainPathways <- GSEAres[pathway %in% 
+                            collapsedPathways$mainPathways][order(-NES), pathway]
+  
+  gsea_plot_file <- paste0(out_dir, 
+                           '/gsea/', 
+                           group, 
+                           '_', 
+                           comparison,
+                           '_',
+                           pathway_title,
+                           '_main.pdf')
+  
+  # plot top pathways
+  p <- plotGseaTable(gene_sets[head(mainPathways, n=20)], 
+                     rankings, GSEAres, gseaParam = 0.5)
+  pdf(file = gsea_plot_file, width = 20, height = 12)
+  print(p)
+  dev.off()
+  
+  print(paste0('GSEA plot saved at: ', gsea_plot_file))
+  
+  gsea_results_file <- paste0(pipe_dir, 
+                              '/gsea/', 
+                              group, 
+                              '_', 
+                              comparison,
+                              '_',
+                              pathway_title)
+  saveRDS(GSEAres, file = paste0(gsea_results_file, '.RDS'))
+  data.table::fwrite(GSEAres, file = paste0(gsea_results_file, '.tsv'), 
+                     sep = "\t", sep2 = c("", " ", ""))
+  print(paste0('GSEA results saved at: ', gsea_results_file))
+  print('---------------------------------------------------------------------')
+  
+  ## uncomment to make further plots
+  # final_list <- list(gene_set = gene_sets,
+  #                   gsea_res = GSEAres)
+  # return(final_list)
+
+}
+
+
 
 

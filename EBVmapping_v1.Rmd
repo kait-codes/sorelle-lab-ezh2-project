@@ -367,50 +367,35 @@ ggplot(df_pretty, aes(fill = kinetics, x = cell)) +
 ggsave(file.path(out_dir, 'ebv_genes_3v1.png'))
 ```
 
-```{r trying GSEA}
+```{r}
+source('functions.R')
+```
 
-gene_sets_df <- msigdbr(species = 'Homo sapiens', 
-                          collection = 'H')
-gene_sets <- gene_sets_df %>%
-  split(x = .$ensembl_gene, f = .$gs_name)
-  
-df <- read.csv(file.path(pipe_dir, 'degs/akata_2v1.csv'))
 
-# filter out viral genes
-df <- df %>% dplyr::filter(str_detect(gene_id, "^ENSG"))
+```{r block7: GSEA}
+cell_lines <- c('akata', 'cf5', 'ibl1', 'lcl', 'mutu')
+treatment_comparisons <- c('2v1', '3v1', '3v2')
 
-df$gene_id <- make.unique(as.character(df$gene_id))
+# gene set enrichment analysis using MSigDB
+## can change collection & subcollection
+## use msigdbr_collections() to view options 
+## biological process: 'C5' 'GO:BP'
+for (x in cell_lines){
+  msigdb_gsea(x, '2v1', 'C5', 'GO:BP')
+}
 
-rankings <- sign(df$logFC)*(-log10(df$PValue))
-names(rankings) <- df$gene_id # genes as names#
-rankings <- sort(rankings, decreasing = TRUE) # sort genes by ranking
-plot(rankings)
+collection <- 'C5'
+subcollection <- 'GO:BP'
 
-# fix infinite values
-max_ranking <- max(rankings[is.finite(rankings)])
-min_ranking <- min(rankings[is.finite(rankings)])
-rankings <- replace(rankings, rankings > max_ranking, max_ranking * 10)
-rankings <- replace(rankings, rankings < min_ranking, min_ranking * 10)
-rankings <- sort(rankings, decreasing = TRUE) # sort genes by ranking
+cells_group <- 'cf5_vs_akata'
+treatments <- c('dmso', 'ms177', 'taz')
 
-ggplot(data.frame(gene_symbol = names(rankings)[1:50], ranks = rankings[1:50]), aes(gene_symbol, ranks)) + 
-	geom_point() +
-	theme_classic() + 
-	theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+for (x in treatments){
+  msigdb_gsea(x, cells_group, 'C5', 'GO:BP')
+}
 
-GSEAres <- fgsea(pathways = gene_sets, # List of gene sets to check
-                 stats = rankings,
-                 scoreType = 'std', # in this case we have both pos and neg rankings. if only pos or neg, set to 'pos','neg'
-                 minSize = 10,
-                 maxSize = 500,
-                 nproc = 1) # for parallelisation
 
-# Select only independent pathways, removing redundancies/similar pathways
-collapsedPathways <- collapsePathways(GSEAres[order(pval)][pval < 0.05], gene_sets, rankings)
-mainPathways <- GSEAres[pathway %in% collapsedPathways$mainPathways][order(-NES), pathway]
-#pdf(file = paste0('GSEA/Selected_pathways/', paste0(filename, background_genes, '_gsea_mainpathways.pdf')), width = 20, height = 15)
-plotGseaTable(gene_sets[mainPathways], rankings, GSEAres, gseaParam = 0.5)
-#dev.off()
+
 
 # plot the most significantly enriched pathway
 plotEnrichment(gene_sets[[head(GSEAres[order(padj), ], 1)$pathway]],
