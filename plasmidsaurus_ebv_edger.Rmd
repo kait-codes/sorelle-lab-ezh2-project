@@ -1,5 +1,5 @@
 ---
-title: "Plasmidsuarus RNAseq EBV+ cells"
+title: "Plasmidsaurus RNAseq EBV+ edgeR"
 author: "Kaitlyn Tremble"
 date: "2026-01-12"
 output: html_document
@@ -21,8 +21,8 @@ rm(list = ls())
 base_dir <- "~/Desktop/sequencing/2025_11_Plasmidsaurus_RNA_Seq"
 code_dir <- file.path(base_dir, "sorelle-lab-ezh2-project")
 data_dir <- file.path(base_dir, "data")
-pipe_dir <- file.path(base_dir, "pipeline")
-out_dir <- file.path(base_dir, "outputs")
+pipe_dir <- file.path(base_dir, "edgeR_pipeline")
+out_dir <- file.path(base_dir, "edgeR_outputs")
 setwd(code_dir)
 
 source('functions.R')
@@ -52,30 +52,6 @@ bioc_using('biomaRt',
 # can change these
 logfc_limit <- 0.6
 pvalue_limit <- 0.05
-
-```
-
-```{r IGNORE reference index}
-
-fastq_dir <- file.path(data_dir, "fastq")
-fastq_files <- list.files(path = fastq_dir, full.names = TRUE)
-fastq_files
-
-
-# index with human & EBV genome
-ref_genome <- file.path(data_dir, "ref_genome/hg38_NC007605_genome.fa")
-ref_annot <- file.path(data_dir, "ref_genome/hg38_NC007605_genes.gtf")
-ref_index <- paste0(pipe_dir, '/ref_index/hg38_ebv1')
-buildindex(basename=ref_index, reference=ref_genome)
-
-test_read <- file.path(fastq_dir, '01_akata_dmso_r1.fastq.gz')
-test_align <- align(index = ref_index,
-                    readfile1 = test_read,
-                    output_file = 'samp1.BAM',
-                    useAnnotation = TRUE,
-                    annot.ext = ref_annot,
-                    isGTF = TRUE)
-
 
 ```
 
@@ -151,7 +127,7 @@ dge <- dge[keep, , keep.lib.sizes = FALSE]
 norm_counts <- normLibSizes(dge)
 
 
-metadata <- read.csv(file.path(data_dir, 'samples_2.csv'),
+metadata <- read.csv(file.path(data_dir, 'samples_cell.csv'),
                            stringsAsFactors = TRUE)
 design <- model.matrix( ~ cell_line, data = metadata)
 rownames(design) <- colnames(norm_counts)
@@ -367,44 +343,120 @@ ggplot(df_pretty, aes(fill = kinetics, x = cell)) +
 ggsave(file.path(out_dir, 'ebv_genes_3v1.png'))
 ```
 
-```{r}
-source('functions.R')
-```
-
-
-```{r block7: GSEA}
-cell_lines <- c('akata', 'cf5', 'ibl1', 'lcl', 'mutu')
-treatment_comparisons <- c('2v1', '3v1', '3v2')
-
-# gene set enrichment analysis using MSigDB
+```{r block7: GSEA pt1}
+# gene set enrichment analysis using fgsea & MSigDB
+## plots top 20 pathways
 ## can change collection & subcollection
 ## use msigdbr_collections() to view options 
 ## biological process: 'C5' 'GO:BP'
-for (x in cell_lines){
-  msigdb_gsea(x, '2v1', 'C5', 'GO:BP')
-}
 
-collection <- 'C5'
-subcollection <- 'GO:BP'
+cell_lines <- c('akata', 'cf5', 'ibl1', 'lcl', 'mutu')
+for (x in cell_lines){
+  msigdb_gsea_main_plot(x, '2v1')
+}
 
 cells_group <- 'cf5_vs_akata'
 treatments <- c('dmso', 'ms177', 'taz')
-
 for (x in treatments){
-  msigdb_gsea(x, cells_group, 'C5', 'GO:BP')
+  msigdb_gsea_main_plot(x, cells_group)
 }
-
-
-
-
-# plot the most significantly enriched pathway
-plotEnrichment(gene_sets[[head(GSEAres[order(padj), ], 1)$pathway]],
-               rankings) + 
-  labs(title = head(GSEAres[order(padj), ], 1)$pathway) +
-  theme_classic() +
-  scale_x_continuous('Rank') +
-  scale_y_continuous('Enrichment score (ES)')
 
 ```
 
+```{r block8: GSEA pt2}
+# making enrichment plots for pathways of interest using fgsea
+## here I'm making plots for TNFa signaling & apoptosis
 
+# run fgsea
+akata_gsea <- msigdb_gsea('akata', '2v1')
+# look at pathways & decide which to plot
+akata_gsea@result[["ID"]]
+# enrichment plot
+msigdb_gsea_enrich_plot('akata_2v1', akata_gsea, 7)
+msigdb_gsea_enrich_plot('akata_2v1', akata_gsea, 11)
+
+cf5_gsea <- msigdb_gsea('cf5', '2v1')
+cf5_gsea@result[["ID"]]
+msigdb_gsea_enrich_plot('cf5_2v1', cf5_gsea, 5)
+msigdb_gsea_enrich_plot('cf5_2v1', cf5_gsea, 7)
+
+ibl1_gsea <- msigdb_gsea('ibl1', '2v1')
+ibl1_gsea@result[["ID"]]
+msigdb_gsea_enrich_plot('ibl1_2v1', ibl1_gsea, 2)
+msigdb_gsea_enrich_plot('ibl1_2v1', ibl1_gsea, 9)
+
+lcl_gsea <- msigdb_gsea('lcl', '2v1')
+lcl_gsea@result[["ID"]]
+msigdb_gsea_enrich_plot('lcl_2v1', lcl_gsea, 5)
+msigdb_gsea_enrich_plot('lcl_2v1', lcl_gsea, 12)
+
+mutu_gsea <- msigdb_gsea('mutu', '2v1')
+mutu_gsea@result[["ID"]]
+```
+
+```{r block9: edgeR on all samples for correlation}
+# normalizing expected counts
+counts <- read.csv(paste0(data_dir, '/exp_counts/counts_all.csv'))
+groups <- rep(1:15, each = 4)
+dge <- DGEList(counts, group = groups) # creating DGE list
+keep <- filterByExpr(dge) #filtering out low counts
+dge <- dge[keep, , keep.lib.sizes = FALSE]
+norm_counts <- normLibSizes(dge)
+
+# design matrix
+metadata <- read.csv(file.path(data_dir, 'samples.csv'),
+                           stringsAsFactors = TRUE)
+metadata$group <- paste(metadata$cell_line, metadata$treatment, sep = ".")
+design <- model.matrix( ~ 0 + group, data = metadata)
+rownames(design) <- colnames(norm_counts)
+design
+
+
+# saving norm counts
+norm_df <- as.data.frame(norm_counts)
+# write.csv(norm_df, paste0(data_dir, '/exp_counts/norm_counts.csv'))
+
+# making MDS plot
+my_shapes <- 15:17
+shape_vec <- rep(rep(my_shapes, each = 4), times = 5)
+my_colors <- c('deepskyblue', 'mediumorchid1', 'maroon1', 'green3', 'firebrick1')
+color_vec <- rep(my_colors, each = 12)
+  
+png(paste0(out_dir, "/samples/all_mds.png"), 
+    width = 8, 
+    height = 6, 
+    units = 'in',
+    res = 1200,
+    pointsize = 12) 
+plotMDS(norm_counts, col= color_vec, pch= shape_vec)
+legend("topright", col=my_colors, legend=c("Akata","CF5", "IBL1", "LCL", "Mutu"),
+       text.col=my_colors)
+legend("bottomright", pch=my_shapes, legend=c("DMSO", "MS177", "TAZ"))
+title('MDS Plot of RNAseq Samples')
+dev.off()
+
+# runnning correlation tests on norm counts
+samp_labels <- paste(metadata$group, metadata$rep, sep = ".")
+norm_matrix <- norm_df[,2:61]
+colnames(norm_matrix) <- samp_labels
+
+spearman_res <- cor(norm_matrix, method = 'spearman')
+pheatmap(spearman_res,
+         fontsize = 5)
+
+pearson_res <- cor(norm_matrix, method = 'pearson')
+pheatmap(pearson_res,
+         fontsize = 5)
+
+
+# estimating the dispersion of the gene expression MS177 vs DMSO
+filter(norm_counts)
+y <- estimateDisp(norm_counts, design, robust = TRUE)
+png(paste0(out_dir, "/samples/all_est_disp.png"), 
+    width = 800, 
+    height = 600, 
+    units = "px") 
+plotBCV(y)
+dev.off()
+
+```

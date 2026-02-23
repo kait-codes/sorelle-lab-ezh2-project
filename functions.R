@@ -1,6 +1,6 @@
 # Functions for analyzing RNAseq of EBV+ samples
 # Author: Kaitlyn Tremble
-# Last updated: 2026-02-16
+# Last updated: 2026-02-23
 
 # PACKAGE INSTALL & LOADING ----------------------------------------------------
 using<-function(...) {
@@ -33,6 +33,35 @@ bioc_using<-function(...) {
   }
 }
 
+
+
+nice_title <- function(group, comparison){
+  # defining comparison for nice title
+  if (comparison == '2v1') {
+    title1 <- paste0(toupper(group), ' cells')
+    title2 <- 'MS177 vs DMSO'
+    
+  } else if (comparison == '3v1'){
+    title1 <- paste0(toupper(group), ' cells')
+    title2 <- 'TAZ vs DMSO'
+    
+  } else if (comparison == '3v2'){
+    title1 <- paste0(toupper(group), ' cells')
+    title2 <- 'TAZ vs MS177'
+    
+  } else if (comparison == 'cf5_vs_akata'){
+    title1 <- paste0(toupper(group), ' treatment')
+    title2 <- 'CF5 vs AKATA cells'
+    
+  } else {
+    stop('ERROR: Invalid comparison')
+    
+  }
+  
+  title_list <- list(title1, title2)
+  return(title_list)
+}
+
 # EDGE R -----------------------------------------------------------------------
 # see BioConductor edgeR user manual 
 
@@ -47,7 +76,7 @@ edger_fit_genes <- function(cell_line){
   
   # see manual 2.6
   ## change if number of samples in each group is different
-  groups <- c(1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3)
+  groups <- rep(1:3, each = 4)
   dge <- DGEList(counts, group = groups) #creating DGE list
   
   # see manual 2.7
@@ -60,13 +89,17 @@ edger_fit_genes <- function(cell_line){
   
   # MDS plot of samples
   png(paste0(out_dir, 
-             "/mds_plots/", 
+             "/samples/", 
              cell_line, 
-             ".png"), 
+             "_mds.png"), 
       width = 800, 
       height = 600, 
       units = "px") 
-  plotMDS(norm_counts)
+  my_colors <- c('blue', 'red', 'purple')
+  color_vec <- rep(my_colors, each = 4)
+  plotMDS(norm_counts, col= color_vec)
+  legend("topright", col=my_colors, legend=c("DMSO", "MS177", "TAZ"),
+         text.col=my_colors)
   dev.off()
   
   # creating design matrix
@@ -75,21 +108,21 @@ edger_fit_genes <- function(cell_line){
   # cell lines/sample labels
   ## I referenced this tutorial for this:
   ## https://gtpb.github.io/ADER18S/pages/tutorial_complex
-  metadata_small <- read.csv(file.path(data_dir, 'samples_treatment.csv'), 
+  metadata_small <- read.csv(file.path(data_dir, 'samples_treatment.csv'),
                              stringsAsFactors = TRUE)
   design <- model.matrix(~ treatment, data = metadata_small)
   rownames(design) <- colnames(norm_counts) #ensure proper grouping here
-  
+
   # using the negative binomial GLM framework to estimate gene dispersions
   # see manual 2.11.2
-  y <- estimateDisp(norm_counts, 
-                    design, 
+  y <- estimateDisp(norm_counts,
+                    design,
                     robust=TRUE)
-  
-  fit <- glmQLFit(y, 
-                  design, 
+
+  fit <- glmQLFit(y,
+                  design,
                   robust=TRUE)
-  
+
   return(fit)
 }
 
@@ -205,30 +238,10 @@ degs_volcano_plot <- function(group,
                               genes = NA, 
                               hover = FALSE){
   
-  # defining comparison for nice titles
-  if (comparison == '2v1') {
-    title1 <- paste0(toupper(group), ' cells')
-    title2 <- 'MS177 vs DMSO'
-    
-  } else if (comparison == '3v1'){
-    title1 <- paste0(toupper(group), ' cells')
-    title2 <- 'TAZ vs DMSO'
-    
-  } else if (comparison == '3v2'){
-    title1 <- paste0(toupper(group), ' cells')
-    title2 <- 'TAZ vs MS177'
-    
-  } else if(comparison == 'cf5_vs_akata'){
-    title1 <- paste0(toupper(group), ' treatment')
-    title2 <- 'CF5 vs AKATA cells'
-    
-  } else {
-    stop('ERROR: Invalid comparison')
-    
-  }
+  title_list <- nice_title(group, comparison)
   
-  print(paste0('Group: ', title1))
-  print(paste0('Comparison: ', title2))
+  print(paste0('Group: ', title_list[1]))
+  print(paste0('Comparison: ', title_list[2]))
   
   # read in data (make sure your naming convention is consistent)
   df <- read.csv(paste0(pipe_dir, 
@@ -265,7 +278,7 @@ degs_volcano_plot <- function(group,
     print('ERROR: Invalid label arguement. Default top 10 genes used.')
   }
 
-  plottitle <- paste0(title1, " in ", title2) #plot title
+  plottitle <- paste0(title_list[1], " in ", title_list[2]) #plot title
   
   xmax <- c(ceiling(max(abs(df$logFC))) + 1, 10) %>% 
     max() #determining x axis limits
@@ -426,49 +439,18 @@ degs_venn_diagram <- function(comparison,
 }
 
 
-## MSigDB PATHWAY ENRICHMENT ANALYSIS DOT PLOT --------------
-
+## ANALYSIS USING MSigDB -------------------------------------------------------
 # can change collection & subcollection
 # use msigdbr_collections() to view options
 
-## I referenced the BioStat Squid tutorial:
-## Pathway Enrichment Analysis with clusterProfiler
-
-msigdb_pathway_enrichment_analysis <- function(group, 
-                                               comparison, 
-                                               collection = 'H',
-                                               subcollection = NULL,
-                                               padj_cutoff = 0.05,
-                                               genecount_cutoff = 5){
-  
-  # defining comparison for nice title
-  if (comparison == '2v1') {
-    title1 <- paste0(toupper(group), ' cells')
-    title2 <- 'MS177 vs DMSO'
-    
-  } else if (comparison == '3v1'){
-    title1 <- paste0(toupper(group), ' cells')
-    title2 <- 'TAZ vs DMSO'
-    
-  } else if (comparison == '3v2'){
-    title1 <- paste0(toupper(group), ' cells')
-    title2 <- 'TAZ vs MS177'
-    
-  } else if (comparison == 'cf5_vs_akata'){
-    title1 <- paste0(toupper(group), ' treatment')
-    title2 <- 'CF5 vs AKATA cells'
-    
-  } else {
-    stop('ERROR: Invalid comparison')
-    
-  }
-  
+title_msigdb <- function(collection = 'H',
+                         subcollection = NULL){
   
   # getting MSigDB collection title
   collections <- msigdbr_collections()
   if (!is.null(subcollection)){
     collection_name <- filter(collections, gs_collection == collection &
-                              gs_subcollection == subcollection) %>%
+                                gs_subcollection == subcollection) %>%
       dplyr::select(gs_collection_name) %>% 
       unlist() %>%
       paste(collapse = ".")
@@ -484,9 +466,45 @@ msigdb_pathway_enrichment_analysis <- function(group,
     stop('ERROR: Invalid MSigDB gene set collection and/or subcollection')
   }
   
-  print(paste0('Group: ', title1))
-  print(paste0('Comparison: ', title2))
-  print(paste0('MSigDB collection: ', collection_name))
+  msigdb_list <- list(collection_name, pathway_title)
+  return(msigdb_list)
+}
+
+
+fetch_msigdb <- function(collection = 'H',
+                         subcollection = NULL){
+  
+  gene_sets_df <- msigdbr(species = 'Homo sapiens', 
+                          collection = collection, 
+                          subcollection = subcollection)
+  
+  return(gene_sets_df)
+}
+
+
+## PATHWAY ENRICHMENT ANALYSIS DOT PLOT ---------------------
+## I referenced the BioStat Squid tutorial:
+## Pathway Enrichment Analysis with clusterProfiler
+msigdb_pathway_enrichment_analysis <- function(group, 
+                                               comparison, 
+                                               collection = 'H',
+                                               subcollection = NULL,
+                                               padj_cutoff = 0.05,
+                                               genecount_cutoff = 5){
+  
+  # nice titles
+  title_list <- nice_title(group, comparison)
+  
+  # getting MSigDB collection title
+  msigdb_list <- title_msigdb(collection, subcollection)
+  
+  # fetch MSigDB collection
+  gene_sets_df <- fetch_msigdb(collection, subcollection)
+  gene_sets <- gene_sets_df %>% dplyr::select(gs_name, ensembl_gene)
+  
+  print(paste0('Group: ', title_list[1]))
+  print(paste0('Comparison: ', title_list[2]))
+  print(paste0('MSigDB collection: ', msigdb_list[1]))
   
   # read in DEG list & split by up/down regulated
   df <- read.csv(paste0(pipe_dir, 
@@ -496,12 +514,6 @@ msigdb_pathway_enrichment_analysis <- function(group,
                         comparison, 
                         '_sig.csv'))
   deg_results_list <- split(df, df$diffexpressed)
-  
-  # fetch MSigDB collection
-  gene_sets_df <- msigdbr(species = 'Homo sapiens', 
-                          collection = collection, 
-                          subcollection = subcollection)
-  gene_sets <- gene_sets_df %>% dplyr::select(gs_name, ensembl_gene)
   
   # get background genes from original exp counts file
   background_genes <- read.csv(file.path(data_dir, 'exp_counts/counts_all.csv')) %>% 
@@ -534,7 +546,7 @@ msigdb_pathway_enrichment_analysis <- function(group,
                              '_', 
                              comparison,
                              '_',
-                             collection,
+                             msigdb_list[2],
                              '.csv')
   write.csv(res_df_sig, enrich_file_path)
   print(paste0('PEA results saved at: ', enrich_file_path))
@@ -542,11 +554,11 @@ msigdb_pathway_enrichment_analysis <- function(group,
   # visualizing results for up & down regulated genes
   results_up <- res$UP
   title_up <- paste0("MSigDB ", 
-                      collection_name, 
+                      msigdb_list[1], 
                       "\nUpregulated Genes\n", 
-                      title1, 
+                      title_list[1], 
                       " in ", 
-                      title2)
+                      title_list[2])
   dot_up <- dotplot(results_up, 
                     showCategory = 15,
                     title = title_up)
@@ -556,7 +568,7 @@ msigdb_pathway_enrichment_analysis <- function(group,
                           '_', 
                           comparison,
                           '_',
-                          pathway_title,
+                         msigdb_list[2],
                           '_up.png')
   
   if (length(dot_up[["data"]][["ID"]]) == 0) {
@@ -569,11 +581,11 @@ msigdb_pathway_enrichment_analysis <- function(group,
   
   results_down <- res$DOWN
   title_down <- paste0("MSigDB ", 
-                        collection_name, 
+                       msigdb_list[1], 
                         "\nDownregulated Genes\n", 
-                        title1, 
+                        title_list[1], 
                         " in ", 
-                        title2)
+                        title_list[2])
   dot_down <- dotplot(results_down, 
                       showCategory = 15,
                       title = title_down)
@@ -583,7 +595,7 @@ msigdb_pathway_enrichment_analysis <- function(group,
                             '_', 
                             comparison,
                             '_',
-                            pathway_title,
+                           msigdb_list[2],
                             '_down.png')
     
   if (length(dot_down[["data"]][["ID"]]) == 0) {
@@ -607,72 +619,11 @@ msigdb_pathway_enrichment_analysis <- function(group,
 
 
 
-## MSigDB GENE SET ENRICHMENT ANALYSIS ----------------------
+## GENE SET ENRICHMENT ANALYSIS -----------------------------
 
-# can change collection & subcollection
-# use msigdbr_collections() to view options
 
-## I referenced the BioStat Squid tutorial:
-## Easy Gene Set Enrichment Analysis in R with fgsea()
-
-msigdb_gsea <- function(group, 
-                        comparison, 
-                        collection = 'H',
-                        subcollection = NULL){
-  
-  # defining comparison for nice title
-  if (comparison == '2v1') {
-    title1 <- paste0(toupper(group), ' cells')
-    title2 <- 'MS177 vs DMSO'
-    
-  } else if (comparison == '3v1'){
-    title1 <- paste0(toupper(group), ' cells')
-    title2 <- 'TAZ vs DMSO'
-    
-  } else if (comparison == '3v2'){
-    title1 <- paste0(toupper(group), ' cells')
-    title2 <- 'TAZ vs MS177'
-    
-  } else if (comparison == 'cf5_vs_akata'){
-    title1 <- paste0(toupper(group), ' treatment')
-    title2 <- 'CF5 vs AKATA cells'
-    
-  } else {
-    stop('ERROR: Invalid comparison')
-    
-  }
-  
-  
-  # getting MSigDB collection title
-  collections <- msigdbr_collections()
-  if (!is.null(subcollection)){
-    collection_name <- filter(collections, gs_collection == collection &
-                                gs_subcollection == subcollection) %>%
-      dplyr::select(gs_collection_name) %>% 
-      unlist() %>%
-      paste(collapse = ".")
-    pathway_title <- paste0(collection, '_', subcollection)
-  } else {
-    collection_name <- filter(collections, gs_collection == collection) %>%
-      dplyr::select(gs_collection_name) %>% 
-      unlist() %>%
-      paste(collapse = ".")
-    pathway_title <- collection
-  }
-  if (collection_name == ""){
-    stop('ERROR: Invalid MSigDB gene set collection and/or subcollection')
-  }
-  
-  print(paste0('Group: ', title1))
-  print(paste0('Comparison: ', title2))
-  print(paste0('MSigDB collection: ', collection_name))
-  
-  # fetch MSigDB collection
-  gene_sets_df <- msigdbr(species = 'Homo sapiens', 
-                          collection = collection, 
-                          subcollection = subcollection)
-  gene_sets <- gene_sets_df %>%
-    split(x = .$ensembl_gene, f = .$gs_name)
+gene_ranking <- function(group, 
+                         comparison){
   
   # read in DEG list
   df <- read.csv(paste0(pipe_dir, 
@@ -709,18 +660,87 @@ msigdb_gsea <- function(group,
   #   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
   # ranked_genes_plot
   
-  GSEAres <- fgsea(pathways = gene_sets,
+  return(rankings)
+}
+
+
+msigdb_gsea <- function(group, 
+                        comparison, 
+                        collection = 'H',
+                        subcollection = NULL){
+  
+  # nice title
+  title_list <- nice_title(group, comparison)
+  
+  # getting MSigDB collection title
+  msigdb_list <- title_msigdb(collection, subcollection)
+  
+  # fetch MSigDB collection
+  gene_sets_df <- fetch_msigdb(collection, subcollection)
+  gene_sets <- gene_sets_df %>% dplyr::select(gs_name, ensembl_gene)
+  
+  print(paste0('Group: ', title_list[1]))
+  print(paste0('Comparison: ', title_list[2]))
+  print(paste0('MSigDB collection: ', msigdb_list[1]))
+  
+  # rank genes
+  rankings <- gene_ranking(group, comparison)
+  
+  # run fgsea
+  GSEAres <- GSEA(rankings, 
+                  TERM2GENE = gene_sets)
+  
+  # save GSEA results
+  gsea_results_file <- paste0(pipe_dir, 
+                              '/gsea/', 
+                              group, 
+                              '_', 
+                              comparison,
+                              '_',
+                              msigdb_list[2],
+                              '.RDS')
+  
+  saveRDS(GSEAres, gsea_results_file)
+  print(paste0('GSEA results saved at: ', gsea_results_file))
+  print('---------------------------------------------------------------------')
+  
+  return(GSEAres)
+}
+
+
+## for this I referenced the BioStat Squid tutorial:
+## Easy Gene Set Enrichment Analysis in R with fgsea()
+msigdb_gsea_main_plot <- function(group, 
+                           comparison, 
+                           collection = 'H',
+                           subcollection = NULL){
+  
+  # nice title
+  title_list <- nice_title(group, comparison)
+  
+  # getting MSigDB collection title
+  msigdb_list <- title_msigdb(collection, subcollection)
+  
+  # fetch MSigDB collection
+  gene_sets_df <- fetch_msigdb(collection, subcollection)
+  gene_sets <- gene_sets_df %>%
+    split(x = .$ensembl_gene, f = .$gs_name)
+  
+  # rank genes
+  rankings <- gene_ranking(group, comparison)
+  
+  # run fgsea
+  GSEAdf <- fgsea(pathways = gene_sets, # list of gene sets to check
                    stats = rankings,
-                   scoreType = 'std', #in this case we have both pos and neg rankings
-                   #if only pos or neg, set to 'pos','neg'
+                   scoreType = 'std',
                    minSize = 10,
                    maxSize = 500,
-                   nproc = 1) #for parallelisation
+                   nproc = 1) # for parallelisation
   
   # select only independent pathways, removing redundancies/similar pathways
-  collapsedPathways <- collapsePathways(GSEAres[order(pval)][pval < 0.05], 
+  collapsedPathways <- collapsePathways(GSEAdf[order(pval)][pval < 0.05], 
                                         gene_sets, rankings)
-  mainPathways <- GSEAres[pathway %in% 
+  mainPathways <- GSEAdf[pathway %in% 
                             collapsedPathways$mainPathways][order(-NES), pathway]
   
   gsea_plot_file <- paste0(out_dir, 
@@ -729,38 +749,44 @@ msigdb_gsea <- function(group,
                            '_', 
                            comparison,
                            '_',
-                           pathway_title,
+                           msigdb_list[2],
                            '_main.pdf')
   
   # plot top pathways
   p <- plotGseaTable(gene_sets[head(mainPathways, n=20)], 
-                     rankings, GSEAres, gseaParam = 0.5)
+                     rankings, GSEAdf, gseaParam = 0.5) +
   pdf(file = gsea_plot_file, width = 20, height = 12)
   print(p)
   dev.off()
   
   print(paste0('GSEA plot saved at: ', gsea_plot_file))
-  
-  gsea_results_file <- paste0(pipe_dir, 
-                              '/gsea/', 
-                              group, 
-                              '_', 
-                              comparison,
-                              '_',
-                              pathway_title)
-  saveRDS(GSEAres, file = paste0(gsea_results_file, '.RDS'))
-  data.table::fwrite(GSEAres, file = paste0(gsea_results_file, '.tsv'), 
-                     sep = "\t", sep2 = c("", " ", ""))
-  print(paste0('GSEA results saved at: ', gsea_results_file))
   print('---------------------------------------------------------------------')
-  
-  ## uncomment to make further plots
-  # final_list <- list(gene_set = gene_sets,
-  #                   gsea_res = GSEAres)
-  # return(final_list)
 
 }
 
 
+msigdb_gsea_enrich_plot <- function(name, 
+                                    gsea_result,
+                                    pathway_num){
+  
+  filename <- paste0(out_dir, 
+                     '/gsea/',
+                     name,
+                     '_',
+                     gsea_result$Description[pathway_num],
+                     '.png')
+  
+  p <- gseaplot2(gsea_result,
+                 geneSetID = pathway_num,
+                 title = gsea_result$Description[pathway_num],
+                 base_size = 20)
+  
+  png(file = filename, width = 800, height = 800)
+  print(p)
+  dev.off()
 
+  print(paste0('GSEA enrich plot saved at: ', filename))
+  print('---------------------------------------------------------------------')
+  
+}
 

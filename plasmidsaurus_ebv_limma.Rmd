@@ -1,0 +1,53 @@
+---
+title: "Plasmidsaurus RNAseq EBV+ limma"
+author: "Kaitlyn Tremble"
+date: "2026-02-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+NOTES: 
+This code begins with an expected counts file which is organized with replicates appearing in adjacent columns
+File organization and naming convention is essential for running properly
+
+```{r block0: setup}
+rm(list = ls())
+
+base_dir <- "~/Desktop/sequencing/2025_11_Plasmidsaurus_RNA_Seq"
+code_dir <- file.path(base_dir, "sorelle-lab-ezh2-project")
+data_dir <- file.path(base_dir, "data")
+pipe_dir <- file.path(base_dir, "limma_pipeline")
+out_dir <- file.path(base_dir, "limma_outputs")
+setwd(code_dir)
+
+source('functions.R')
+
+# packages
+using('BiocManager', 
+      'DOSE',
+      'enrichplot',
+      'fgsea',
+      'ggrepel', 
+      'ggupset',
+      'ggVennDiagram',
+      'htmlwidgets',
+      'msigdbr',
+      'pheatmap',
+      'RColorBrewer',
+      'Seurat',  
+      'tidyverse')
+
+bioc_using('biomaRt', 
+           'clusterProfiler',
+           'org.Hs.eg.db',
+           'Rsubread')
+
+
+# can change these
+logfc_limit <- 0.6
+pvalue_limit <- 0.05
+
+```
