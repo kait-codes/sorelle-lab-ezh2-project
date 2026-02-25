@@ -66,51 +66,26 @@ nice_title <- function(group, comparison){
 # see BioConductor edgeR user manual 
 
 # first fit gene counts to a model
-edger_fit_genes <- function(cell_line){
+edger_fit_genes <- function(your_cell_line){
   
-  # read in expected counts file
-  counts <- read.csv(paste0(data_dir, 
-                            '/exp_counts/counts_', 
-                            cell_line, 
-                            '.csv'))
+  # read in normalized counts file
+  norm_counts <- readRDS(paste0(base_dir, '/2_pipeline/norm_counts.RDS'))
   
-  # see manual 2.6
-  ## change if number of samples in each group is different
-  groups <- rep(1:3, each = 4)
-  dge <- DGEList(counts, group = groups) #creating DGE list
-  
-  # see manual 2.7
-  keep <- filterByExpr(dge) #filtering out low counts
-  dge <- dge[keep, , keep.lib.sizes=FALSE]
-  
-  # normalizing by library size
-  # see manual 2.8.3
-  norm_counts <- normLibSizes(dge)
-  
-  # MDS plot of samples
-  png(paste0(out_dir, 
-             "/samples/", 
-             cell_line, 
-             "_mds.png"), 
-      width = 800, 
-      height = 600, 
-      units = "px") 
-  my_colors <- c('blue', 'red', 'purple')
-  color_vec <- rep(my_colors, each = 4)
-  plotMDS(norm_counts, col= color_vec)
-  legend("topright", col=my_colors, legend=c("DMSO", "MS177", "TAZ"),
-         text.col=my_colors)
-  dev.off()
-  
+  # create a logical vector based on the 'cells' column in the samples data frame
+  idx <- norm_counts$samples$cells == your_cell_line
+  # use the logical vector to subset the DGEList object
+  norm_counts <- norm_counts[, idx]
+
   # creating design matrix
   # note: only include factors you will use (in this case treatment)
   # my matrix doesn't include sample labels since I am using it for multiple
   # cell lines/sample labels
   ## I referenced this tutorial for this:
   ## https://gtpb.github.io/ADER18S/pages/tutorial_complex
-  metadata_small <- read.csv(file.path(data_dir, 'samples_treatment.csv'),
-                             stringsAsFactors = TRUE)
-  design <- model.matrix(~ treatment, data = metadata_small)
+  metadata <- read.csv(paste0(data_dir, 'samples.csv'),
+                       stringsAsFactors = TRUE)
+  meta_subset <- filter(metadata, cell_line == your_cell_line)
+  design <- model.matrix(~ treatment, data = meta_subset)
   rownames(design) <- colnames(norm_counts) #ensure proper grouping here
 
   # using the negative binomial GLM framework to estimate gene dispersions
@@ -128,7 +103,7 @@ edger_fit_genes <- function(cell_line){
 
 # use output of above function to identify DEGs
 edger_degs <- function(fit, 
-                       cell_line, 
+                       your_cell_line, 
                        comparison){
   
   # defining drug comparison (based on design matrix order so be careful)
@@ -174,8 +149,8 @@ edger_degs <- function(fit,
   ## all DEGs
   sorted_df <- df %>% arrange(PValue)
   csv_file_path <- paste0(pipe_dir, 
-                          '/degs/', 
-                          cell_line, 
+                          'degs/', 
+                          your_cell_line, 
                           "_", 
                           comparison, 
                           ".csv")
@@ -184,8 +159,8 @@ edger_degs <- function(fit,
   ## significant DEGs
   sig_degs <- filter(sorted_df, diffexpressed != 'NO')
   sig_path <- paste0(pipe_dir, 
-                     '/degs/', 
-                     cell_line, 
+                     'degs/', 
+                     your_cell_line, 
                      "_", 
                      comparison, 
                      "_sig.csv")
@@ -194,8 +169,8 @@ edger_degs <- function(fit,
   ## significant up regulated DEGs
   up_degs <- filter(sorted_df, diffexpressed == 'UP')
   up_path <- paste0(pipe_dir, 
-                    '/degs/', 
-                    cell_line, 
+                    'degs/', 
+                    your_cell_line, 
                     "_", 
                     comparison, 
                     "_sig_up.csv")
@@ -204,17 +179,17 @@ edger_degs <- function(fit,
   ## significant down regulated DEGs
   down_degs <- filter(sorted_df, diffexpressed == 'DOWN')
   down_path <- paste0(pipe_dir, 
-                      '/degs/', 
-                      cell_line, 
+                      'degs/', 
+                      your_cell_line, 
                       "_", 
                       comparison, 
                       "_sig_down.csv")
   write.csv(down_degs, down_path, row.names = FALSE)
   
   
-  print(paste0('Cell line: ', cell_line))
+  print(paste0('Cell line: ', your_cell_line))
   print(paste0('Comparison: ', drugs))
-  print(paste0('DEG files saved at: ', pipe_dir, '/degs'))
+  print(paste0('DEG files saved at: ', pipe_dir, 'degs'))
   print('---------------------------------------------------------------------')
   
   # OPTIONAL: use DEGs directly from this function for further analysis
@@ -245,7 +220,7 @@ degs_volcano_plot <- function(group,
   
   # read in data (make sure your naming convention is consistent)
   df <- read.csv(paste0(pipe_dir, 
-                        '/degs/', 
+                        'degs/', 
                         group, 
                         '_', 
                         comparison, 
@@ -314,7 +289,7 @@ degs_volcano_plot <- function(group,
     theme_bw()
 
   plot_file_path <- paste0(out_dir, 
-                           '/volcano_plots/', 
+                           'volcano_plots/', 
                            group, 
                            '_', 
                            comparison,
@@ -329,7 +304,7 @@ degs_volcano_plot <- function(group,
   if (hover == TRUE){
     interactive_plot <- HoverLocator(v_plot)
     interactive_file_path <- paste0(out_dir, 
-                                    '/volcano_plots/0_hoverlocator/', 
+                                    'volcano_plots/0_hoverlocator/', 
                                     group, 
                                     '_', 
                                     comparison, 
@@ -377,7 +352,7 @@ degs_venn_diagram <- function(comparison,
   data_list <- list()
   for (i in 1:length(comparison)){
     df <- read.csv(paste0(pipe_dir, 
-                          '/degs/', 
+                          'degs/', 
                           comparison[i], 
                           '_', 
                           group, 
@@ -401,7 +376,7 @@ degs_venn_diagram <- function(comparison,
                                 shared_genes$SYMBOL)
   
   csv_file_path <- paste0(pipe_dir, 
-                          '/degs/shared/',
+                          'degs/shared/',
                           group,
                           "_",
                           comparison_file_name, 
@@ -426,7 +401,7 @@ degs_venn_diagram <- function(comparison,
     theme(plot.background = element_rect(fill = "white"))
   
   venn_file <- paste0(out_dir, 
-                      '/venn_diagrams/', 
+                      'venn_diagrams/', 
                       group_folder, 
                       '/',
                       comparison_file_name, 
@@ -508,7 +483,7 @@ msigdb_pathway_enrichment_analysis <- function(group,
   
   # read in DEG list & split by up/down regulated
   df <- read.csv(paste0(pipe_dir, 
-                        '/degs/', 
+                        'degs/', 
                         group, 
                         '_', 
                         comparison, 
@@ -516,7 +491,7 @@ msigdb_pathway_enrichment_analysis <- function(group,
   deg_results_list <- split(df, df$diffexpressed)
   
   # get background genes from original exp counts file
-  background_genes <- read.csv(file.path(data_dir, 'exp_counts/counts_all.csv')) %>% 
+  background_genes <- read.csv(paste0(data_dir, 'exp_counts/exp_counts.csv')) %>% 
     dplyr::select(1)
   
   # run clusterProfiler on each sub-dataframe
@@ -541,7 +516,7 @@ msigdb_pathway_enrichment_analysis <- function(group,
   
   # save results
   enrich_file_path <- paste0(pipe_dir, 
-                             '/pea/', 
+                             'pea/', 
                              group, 
                              '_', 
                              comparison,
@@ -563,7 +538,7 @@ msigdb_pathway_enrichment_analysis <- function(group,
                     showCategory = 15,
                     title = title_up)
   file_path_up <- paste0(out_dir, 
-                          '/pea/', 
+                          'pea/', 
                           group, 
                           '_', 
                           comparison,
@@ -590,7 +565,7 @@ msigdb_pathway_enrichment_analysis <- function(group,
                       showCategory = 15,
                       title = title_down)
   file_path_down <- paste0(out_dir, 
-                            '/pea/', 
+                            'pea/', 
                             group, 
                             '_', 
                             comparison,
@@ -606,7 +581,7 @@ msigdb_pathway_enrichment_analysis <- function(group,
   }
   
   
-  print(paste0('PEA plots saved at: ', out_dir, '/pea/'))
+  print(paste0('PEA plots saved at: ', out_dir, 'pea/'))
   print('---------------------------------------------------------------------')
   
   ## OPTIONAL: uncomment to allow for further plot making besides dot plot
@@ -627,7 +602,7 @@ gene_ranking <- function(group,
   
   # read in DEG list
   df <- read.csv(paste0(pipe_dir, 
-                        '/degs/', 
+                        'degs/', 
                         group, 
                         '_', 
                         comparison, 
@@ -692,7 +667,7 @@ msigdb_gsea <- function(group,
   
   # save GSEA results
   gsea_results_file <- paste0(pipe_dir, 
-                              '/gsea/', 
+                              'gsea/', 
                               group, 
                               '_', 
                               comparison,
@@ -744,7 +719,7 @@ msigdb_gsea_main_plot <- function(group,
                             collapsedPathways$mainPathways][order(-NES), pathway]
   
   gsea_plot_file <- paste0(out_dir, 
-                           '/gsea/', 
+                           'gsea/', 
                            group, 
                            '_', 
                            comparison,
@@ -770,7 +745,7 @@ msigdb_gsea_enrich_plot <- function(name,
                                     pathway_num){
   
   filename <- paste0(out_dir, 
-                     '/gsea/',
+                     'gsea/',
                      name,
                      '_',
                      gsea_result$Description[pathway_num],

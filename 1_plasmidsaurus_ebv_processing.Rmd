@@ -1,0 +1,224 @@
+---
+title: "Plasmidsaurus RNAseq EBV+ Data Processing"
+author: "Kaitlyn Tremble"
+date: "2026-02-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+NOTES: 
+This code begins with an expected counts file which is organized with replicates appearing in adjacent columns
+File organization and naming convention is essential for running properly
+
+```{r block0: setup}
+rm(list = ls())
+
+base_dir <- "~/Desktop/sequencing/2025_11_Plasmidsaurus_RNA_Seq"
+code_dir <- file.path(base_dir, "sorelle-lab-ezh2-project")
+data_dir <- file.path(base_dir, "1_data/")
+pipe_dir <- file.path(base_dir, "2_pipeline/")
+out_dir <- file.path(base_dir, "3_outputs/samples/")
+setwd(code_dir)
+
+source('functions.R')
+
+# packages
+using('BiocManager', 
+      'DOSE',
+      'enrichplot',
+      'fgsea',
+      'ggrepel', 
+      'ggupset',
+      'ggVennDiagram',
+      'htmlwidgets',
+      'msigdbr',
+      'pheatmap',
+      'RColorBrewer',
+      'Seurat',  
+      'tidyverse')
+
+bioc_using('biomaRt', 
+           'clusterProfiler',
+           'edgeR',
+           'limma',
+           'org.Hs.eg.db',
+           'Rsubread')
+
+
+# can change these
+logfc_limit <- 0.6
+pvalue_limit <- 0.05
+
+```
+
+```{r block1: data grab}
+# get count data 
+counts <- read.csv(paste0(data_dir, 'exp_counts/exp_counts.csv'))
+groups <- rep(1:15, each = 4)
+dge_pre <- DGEList(counts, group = groups) #creating DGE list
+
+# organizing sample info (can I figure out how to merge?)
+metadata <- read.csv(paste0(data_dir, 'samples.csv'),
+                           stringsAsFactors = TRUE)
+
+cell_lines <- unique(metadata$cell_line)
+treatments <- unique(metadata$treatment)
+samplenames <- rownames(dge[['samples']])
+
+cells_group <- rep(cell_lines, each=12)
+dge_pre$samples$cells <- cells_group
+treatment_group <- rep(rep(treatments, each = 4), times=5)
+dge_pre$samples$treatment <- treatment_group
+```
+
+```{r block2: filtering data}
+# data transform
+L <- mean(dge_pre$samples$lib.size) * 1e-6
+M <- median(dge_pre$samples$lib.size) * 1e-6
+lcpm <- cpm(dge_pre, log=TRUE)
+
+# plot read distribution
+nsamples <- ncol(dge)
+col <- brewer.pal(nsamples, "Paired") #getting colors
+
+lcpm.cutoff <- log2(10/M) #cutoff
+par(mfrow=c(1,2))
+plot(density(lcpm[,1]), col=col[1], lwd=2, ylim=c(0,1), las=2,
+     main="A. Raw data", xlab="Log-cpm")
+abline(v=lcpm.cutoff, lty=3)
+for (i in 2:nsamples){
+  den <- density(lcpm[,i])
+  lines(den$x, den$y, col=col[i], lwd=2)
+}
+#legend("topright", samplenames, text.col=col, bty="n")
+
+
+# filtering out low counts
+## see edgeR user guide 2.7
+keep <- filterByExpr(dge_pre) 
+dge <- dge_pre[keep, , keep.lib.sizes = FALSE]
+
+# plot distribution of filtered counts
+lcpm_filtered <- cpm(dge, log=TRUE)
+plot(density(lcpm_filtered[,1]), col=col[1], lwd=2, ylim=c(0,0.3), las=2, 
+     main="B. Filtered data", xlab="Log-cpm")
+abline(v=lcpm.cutoff, lty=3)
+for (i in 2:nsamples){
+  den <- density(lcpm_filtered[,i])
+  lines(den$x, den$y, col=col[i], lwd=2)
+}
+#legend("topright", samplenames, text.col=col, bty="n")
+```
+
+```{r block3: normalizing data}
+# normalizing by library size
+## see edgeR user guide 2.8
+norm_counts <- normLibSizes(dge)
+
+# saving norm counts
+normfile <- paste0(pipe_dir, 'norm_counts')
+saveRDS(norm_counts, paste0(normfile, '.RDS'))
+norm_df <- as.data.frame(norm_counts)
+write.csv(norm_df, paste0(norm_file, '.csv'))
+
+# plot
+par(mfrow=c(1,2))
+lcpm <- cpm(dge, log=TRUE)
+boxplot(lcpm, las=2, col=col, main="")
+title(main="A. Example: Unnormalised data", ylab="Log-cpm")
+lcpm_norm <- cpm(norm_counts, log=TRUE)
+boxplot(lcpm_norm, las=2, col=col, main="")
+title(main="B. Example: Normalised data", ylab="Log-cpm")
+```
+
+```{r block4: MDS plots}
+# making MDS plot of all samples
+my_shapes <- 15:17
+shape_vec <- rep(rep(my_shapes, each = 4), times = 5)
+my_colors <- c('deepskyblue', 'mediumorchid1', 'maroon1', 'green3', 'firebrick1')
+color_vec <- rep(my_colors, each = 12)
+  
+png(paste0(out_dir, "samples/mds_all.png"), 
+    width = 8, 
+    height = 6, 
+    units = 'in',
+    res = 1200,
+    pointsize = 12) 
+plotMDS(norm_counts, col= color_vec, pch= shape_vec)
+legend("topright", col=my_colors, legend=c("Akata","CF5", "IBL1", "LCL", "Mutu"),
+       text.col=my_colors)
+legend("bottomright", pch=my_shapes, legend=c("DMSO", "MS177", "TAZ"))
+title('MDS Plot of RNAseq Samples')
+dev.off()
+
+
+# individual plots for each cell line
+for (x in cell_lines){
+  # create a logical vector based on the 'cells' column in the samples data frame
+  idx <- norm_counts$samples$cells == x
+  
+  # use the logical vector to subset the DGEList object
+  subset <- norm_counts[, idx]
+  
+  # MDS plot of samples
+  png(paste0(out_dir, 
+             'mds_',
+             x,
+             '.png'), 
+      width = 800, 
+      height = 600, 
+      units = "px") 
+  my_colors <- c('blue', 'red', 'purple')
+  color_vec <- rep(my_colors, each = 4)
+  plotMDS(subset, col= color_vec)
+  legend("topright", col=my_colors, legend=treatments,
+         text.col=my_colors)
+  dev.off()
+}
+```
+
+```{r block5: sample correlation heatmap}
+
+# runnning correlation tests on norm counts
+samp_labels <- paste(metadata$group, metadata$rep, sep = ".")
+norm_matrix <- norm_df[,2:61]
+colnames(norm_matrix) <- samp_labels
+
+spearman_res <- cor(norm_matrix, method = 'spearman')
+pheatmap(spearman_res,
+         fontsize = 5)
+
+pearson_res <- cor(norm_matrix, method = 'pearson')
+pheatmap(pearson_res,
+         fontsize = 5)
+
+```
+
+```{r block6: design matrix for all samples}
+metadata$group <- paste(metadata$cell_line, metadata$treatment, sep = ".")
+design_all <- model.matrix( ~ 0 + group, data = metadata)
+rownames(design_all) <- colnames(norm_counts)
+design_all
+```
+
+```{r block7: edgeR est dispersion}
+# estimating the dispersion of the gene expression
+## see edgeR user guide 2.11.2
+y <- estimateDisp(norm_counts, design, robust = TRUE)
+png(paste0(out_dir, "samples/all_est_disp.png"), 
+    width = 800, 
+    height = 600, 
+    units = "px") 
+plotBCV(y)
+dev.off()
+```
+
+```{r block8: limma voom}
+v <- voom(norm_counts, design_all, plot=TRUE)
+v
+
+```
+

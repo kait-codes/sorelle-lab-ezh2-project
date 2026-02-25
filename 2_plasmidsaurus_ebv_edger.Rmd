@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 NOTES: 
-This code begins with an expected counts file which is organized with replicates appearing in adjacent columns
+This code begins with a normalized counts file which is organized with replicates appearing in adjacent columns
 File organization and naming convention is essential for running properly
 
 ```{r block0: setup}
@@ -20,9 +20,9 @@ rm(list = ls())
 
 base_dir <- "~/Desktop/sequencing/2025_11_Plasmidsaurus_RNA_Seq"
 code_dir <- file.path(base_dir, "sorelle-lab-ezh2-project")
-data_dir <- file.path(base_dir, "data")
-pipe_dir <- file.path(base_dir, "edgeR_pipeline")
-out_dir <- file.path(base_dir, "edgeR_outputs")
+data_dir <- file.path(base_dir, "1_data/")
+pipe_dir <- file.path(base_dir, "2_pipeline/edgeR/")
+out_dir <- file.path(base_dir, "3_outputs/edgeR/")
 setwd(code_dir)
 
 source('functions.R')
@@ -113,7 +113,7 @@ for (x in cell_lines){
 ## this is doing block1 by hand because the experimental design is different
 
 # reorganizing the counts matrix
-counts <- read.csv(paste0(data_dir, '/exp_counts/counts_all.csv'))
+counts <- read.csv(paste0(data_dir, 'exp_counts/exp_counts.csv'))
 counts <- counts[,1:25]
 counts_dmso <- counts[,c(1:5,14:17)]
 counts_ms177 <- counts[,c(1,6:9,18:21)]
@@ -127,7 +127,7 @@ dge <- dge[keep, , keep.lib.sizes = FALSE]
 norm_counts <- normLibSizes(dge)
 
 
-metadata <- read.csv(file.path(data_dir, 'samples_cell.csv'),
+metadata <- read.csv(paste0(data_dir, 'samples_cell.csv'),
                            stringsAsFactors = TRUE)
 design <- model.matrix( ~ cell_line, data = metadata)
 rownames(design) <- colnames(norm_counts)
@@ -164,19 +164,19 @@ treatment <- 'taz'
 # saving DEG lists
 ## all DEGs
 sorted_df <- df %>% arrange(PValue)
-csv_file_path <- paste0(pipe_dir, '/degs/', treatment, "_cf5_vs_akata.csv")
+csv_file_path <- paste0(pipe_dir, 'degs/', treatment, "_cf5_vs_akata.csv")
 write.csv(sorted_df, csv_file_path, row.names = FALSE)
 ## significant DEGs
 sig_degs <- filter(sorted_df, diffexpressed != 'NO')
-sig_path <- paste0(pipe_dir, '/degs/', treatment, "_cf5_vs_akata_sig.csv")
+sig_path <- paste0(pipe_dir, 'degs/', treatment, "_cf5_vs_akata_sig.csv")
 write.csv(sig_degs, sig_path, row.names = FALSE)
 ## significant up regulated DEGs
 up_degs <- filter(sorted_df, diffexpressed == 'UP')
-up_path <- paste0(pipe_dir, '/degs/', treatment, "_cf5_vs_akata_sig_up.csv")
+up_path <- paste0(pipe_dir, 'degs/', treatment, "_cf5_vs_akata_sig_up.csv")
 write.csv(up_degs, up_path, row.names = FALSE)
 ## significant down regulated DEGs
 down_degs <- filter(sorted_df, diffexpressed == 'DOWN')
-down_path <- paste0(pipe_dir, '/degs/', treatment, "_cf5_vs_akata_sig_down.csv")
+down_path <- paste0(pipe_dir, 'degs/', treatment, "_cf5_vs_akata_sig_down.csv")
 write.csv(down_degs, down_path, row.names = FALSE)
 
 
@@ -215,7 +215,7 @@ msigdb_pathway_enrichment_analysis('dmso', cells_group)
 cell_lines <- c('akata', 'ibl1', 'lcl', 'mutu')
 viral_degs <- data.frame()
 for (x in cell_lines){
-  df_up <- read.csv(paste0(pipe_dir, '/degs/', x, '_2v1_sig_up.csv'))
+  df_up <- read.csv(paste0(pipe_dir, 'degs/', x, '_2v1_sig_up.csv'))
   df_up <- dplyr::select(df_up, gene_id)
   df_up <- filter(df_up, str_detect(df_up$gene_id, '^ENSG') == FALSE)
   colnames(df_up) <- paste0(x, '_up')
@@ -224,7 +224,7 @@ for (x in cell_lines){
                         values_to = 'gene_id')
   viral_degs <- rbind(viral_degs, df_up_long)
   
-  df_down <- read.csv(paste0(pipe_dir, '/degs/', x, '_2v1_sig_down.csv'))
+  df_down <- read.csv(paste0(pipe_dir, 'degs/', x, '_2v1_sig_down.csv'))
   df_down <- dplyr::select(df_down, gene_id)
   df_down <- filter(df_down, str_detect(df_down$gene_id, '^ENSG') == FALSE)
   colnames(df_down) <- paste0(x, '_down')
@@ -238,7 +238,7 @@ for (x in cell_lines){
 }
 
 # adding EBV gene annotation
-ebv_annot <- read.csv(file.path(data_dir, 'ebv_annot.csv'))
+ebv_annot <- read.csv(paste0(data_dir, 'ebv_annot.csv'))
 df_merge <- merge(viral_degs, ebv_annot, by.x='gene_id', by.y='gene_id', all.x = TRUE)
 
 df_merge <- dplyr::select(df_merge, cell, gene_id, everything())
@@ -248,11 +248,11 @@ df_merge$kinetics <- factor(df_merge$kinetics,
 df_merge <- separate(df_merge, 1, into = c('cell', 'direction'), sep = '_')
 
 # save annotated viral DEGs
-#write.csv(df_merge, file.path(pipe_dir, 'degs/viral_sig_2v1.csv'), 
+#write.csv(df_merge, paste0(pipe_dir, 'degs/viral_sig_2v1.csv'), 
 #          row.names = FALSE)
 
 # START HERE if list already made
-#df_merge <- read.csv(file.path(pipe_dir, 'degs/viral_sig_2v1.csv'))
+#df_merge <- read.csv(paste0(pipe_dir, 'degs/viral_sig_2v1.csv'))
 
 # making labels pretty for graph
 df_pretty <- df_merge %>% mutate(cell = toupper(cell))
@@ -272,7 +272,7 @@ ggplot(df_pretty, aes(fill = kinetics, x = cell)) +
   facet_wrap(~ direction) +
   theme_bw() 
 
-ggsave(file.path(out_dir, 'ebv_genes_2v1.png'))
+ggsave(paste0(out_dir, 'ebv_genes_2v1.png'))
 ```
 
 ```{r block6: analyzing viral genes TAZ vs DMSO}
@@ -283,7 +283,7 @@ ggsave(file.path(out_dir, 'ebv_genes_2v1.png'))
 cell_lines <- c('akata', 'ibl1', 'lcl', 'mutu')
 viral_degs <- data.frame()
 for (x in cell_lines){
-  df_up <- read.csv(paste0(pipe_dir, '/degs/', x, '_3v1_sig_up.csv'))
+  df_up <- read.csv(paste0(pipe_dir, 'degs/', x, '_3v1_sig_up.csv'))
   df_up <- dplyr::select(df_up, gene_id)
   df_up <- filter(df_up, str_detect(df_up$gene_id, '^ENSG') == FALSE)
   colnames(df_up) <- paste0(x, '_up')
@@ -292,7 +292,7 @@ for (x in cell_lines){
                         values_to = 'gene_id')
   viral_degs <- rbind(viral_degs, df_up_long)
   
-  df_down <- read.csv(paste0(pipe_dir, '/degs/', x, '_3v1_sig_down.csv'))
+  df_down <- read.csv(paste0(pipe_dir, 'degs/', x, '_3v1_sig_down.csv'))
   df_down <- dplyr::select(df_down, gene_id)
   df_down <- filter(df_down, str_detect(df_down$gene_id, '^ENSG') == FALSE)
   colnames(df_down) <- paste0(x, '_down')
@@ -306,7 +306,7 @@ for (x in cell_lines){
 }
 
 # adding EBV gene annotation
-ebv_annot <- read.csv(file.path(data_dir, 'ebv_annot.csv'))
+ebv_annot <- read.csv(paste0(data_dir, 'ebv_annot.csv'))
 df_merge <- merge(viral_degs, ebv_annot, by.x='gene_id', by.y='gene_id', all.x = TRUE)
 
 df_merge <- dplyr::select(df_merge, cell, gene_id, everything())
@@ -316,11 +316,11 @@ df_merge$kinetics <- factor(df_merge$kinetics,
 df_merge <- separate(df_merge, 1, into = c('cell', 'direction'), sep = '_')
 
 # save annotated viral DEGs
-#write.csv(df_merge, file.path(pipe_dir, 'degs/viral_sig_3v1.csv'), 
+#write.csv(df_merge, paste0(pipe_dir, 'degs/viral_sig_3v1.csv'), 
 #          row.names = FALSE)
 
 # START HERE if list already made
-#df_merge <- read.csv(file.path(pipe_dir, 'degs/viral_sig_3v1.csv'))
+#df_merge <- read.csv(paste0(pipe_dir, 'degs/viral_sig_3v1.csv'))
 
 # making labels pretty for graph
 df_pretty <- df_merge %>% mutate(cell = toupper(cell))
@@ -340,7 +340,7 @@ ggplot(df_pretty, aes(fill = kinetics, x = cell)) +
   facet_wrap(~ direction) +
   theme_bw() 
 
-ggsave(file.path(out_dir, 'ebv_genes_3v1.png'))
+ggsave(paste0(out_dir, 'ebv_genes_3v1.png'))
 ```
 
 ```{r block7: GSEA pt1}
@@ -392,71 +392,4 @@ msigdb_gsea_enrich_plot('lcl_2v1', lcl_gsea, 12)
 
 mutu_gsea <- msigdb_gsea('mutu', '2v1')
 mutu_gsea@result[["ID"]]
-```
-
-```{r block9: edgeR on all samples for correlation}
-# normalizing expected counts
-counts <- read.csv(paste0(data_dir, '/exp_counts/counts_all.csv'))
-groups <- rep(1:15, each = 4)
-dge <- DGEList(counts, group = groups) # creating DGE list
-keep <- filterByExpr(dge) #filtering out low counts
-dge <- dge[keep, , keep.lib.sizes = FALSE]
-norm_counts <- normLibSizes(dge)
-
-# design matrix
-metadata <- read.csv(file.path(data_dir, 'samples.csv'),
-                           stringsAsFactors = TRUE)
-metadata$group <- paste(metadata$cell_line, metadata$treatment, sep = ".")
-design <- model.matrix( ~ 0 + group, data = metadata)
-rownames(design) <- colnames(norm_counts)
-design
-
-
-# saving norm counts
-norm_df <- as.data.frame(norm_counts)
-# write.csv(norm_df, paste0(data_dir, '/exp_counts/norm_counts.csv'))
-
-# making MDS plot
-my_shapes <- 15:17
-shape_vec <- rep(rep(my_shapes, each = 4), times = 5)
-my_colors <- c('deepskyblue', 'mediumorchid1', 'maroon1', 'green3', 'firebrick1')
-color_vec <- rep(my_colors, each = 12)
-  
-png(paste0(out_dir, "/samples/all_mds.png"), 
-    width = 8, 
-    height = 6, 
-    units = 'in',
-    res = 1200,
-    pointsize = 12) 
-plotMDS(norm_counts, col= color_vec, pch= shape_vec)
-legend("topright", col=my_colors, legend=c("Akata","CF5", "IBL1", "LCL", "Mutu"),
-       text.col=my_colors)
-legend("bottomright", pch=my_shapes, legend=c("DMSO", "MS177", "TAZ"))
-title('MDS Plot of RNAseq Samples')
-dev.off()
-
-# runnning correlation tests on norm counts
-samp_labels <- paste(metadata$group, metadata$rep, sep = ".")
-norm_matrix <- norm_df[,2:61]
-colnames(norm_matrix) <- samp_labels
-
-spearman_res <- cor(norm_matrix, method = 'spearman')
-pheatmap(spearman_res,
-         fontsize = 5)
-
-pearson_res <- cor(norm_matrix, method = 'pearson')
-pheatmap(pearson_res,
-         fontsize = 5)
-
-
-# estimating the dispersion of the gene expression MS177 vs DMSO
-filter(norm_counts)
-y <- estimateDisp(norm_counts, design, robust = TRUE)
-png(paste0(out_dir, "/samples/all_est_disp.png"), 
-    width = 800, 
-    height = 600, 
-    units = "px") 
-plotBCV(y)
-dev.off()
-
 ```
