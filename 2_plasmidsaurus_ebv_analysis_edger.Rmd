@@ -58,9 +58,6 @@ pvalue_limit <- 0.05
 cell_lines <- c('akata', 'cf5', 'ibl1', 'lcl', 'mutu')
 treatment_comparisons <- c('MS177vsDMSO', 'TAZvsDMSO', 'MS177vsTAZ')
 
-# pipe_dir <- file.path(base_dir, "2_pipeline/limma/")
-# out_dir <- file.path(base_dir, "3_outputs/limma/")
-
 # volcano plots
 ## can label viral genes using label = 'viral'
 ## or label custom gene list using label = 'custom' and gene = your_list
@@ -70,7 +67,6 @@ for (x in cell_lines){
     degs_volcano_plot(x, y)
   }
 }
-
 
 # making venn diagrams to compare DEGs between cell lines
 compare_cells <- c('ibl1', 'lcl') #change for different comparisons
@@ -85,7 +81,9 @@ for (y in treatment_comparisons){
 ## use msigdbr_collections() to view options 
 ## biological processes: 'C5' 'GO:BP'
 for (x in cell_lines){
-  msigdb_pathway_enrichment_analysis(x, 'MS177vsDMSO')
+  for (y in treatment_comparisons){
+    msigdb_pathway_enrichment_analysis(x, y, 'C5', 'GO:BP')
+  }
 }
 
 ```
@@ -100,19 +98,21 @@ cells_group <- 'AKATAvsCF5'
 
 # volcano plots
 for (x in treatments){
-  degs_volcano_plot(x, cells_group)
+  degs_volcano_plot(x, cells_group, hover = TRUE)
 }
 
 
 # making venn diagrams to compare DEGs between treatment groups
-treatment_compare <- c('ms177', 'taz')
+treatment_compare <- c('ms177', 'dmso')
 
 degs_venn_diagram(treatment_compare, cells_group, 'up')
 degs_venn_diagram(treatment_compare, cells_group, 'down')
 
 
 # MSigDB PEA
-msigdb_pathway_enrichment_analysis('dmso', cells_group)
+for (x in treatments){
+  msigdb_pathway_enrichment_analysis(x, cells_group)
+}
 ```
 
 ```{r block3: analyzing viral genes MS177 vs DMSO}
@@ -154,12 +154,12 @@ df_merge$kinetics <- factor(df_merge$kinetics,
 
 df_merge <- separate(df_merge, 1, into = c('cell', 'direction'), sep = '_')
 
-# save annotated viral DEGs
-#write.csv(df_merge, paste0(pipe_dir, 'degs/viral_sig_MS177vsDMSO.csv'), 
-#          row.names = FALSE)
+## save annotated viral DEGs
+# write.csv(df_merge, paste0(pipe_dir, 'degs/viral_sig_MS177vsDMSO.csv'), 
+#           row.names = FALSE)
 
-# START HERE if list already made
-#df_merge <- read.csv(paste0(pipe_dir, 'degs/viral_sig_MS177vsDMSO.csv'))
+## START HERE if list already made
+# df_merge <- read.csv(paste0(pipe_dir, 'degs/viral_sig_MS177vsDMSO.csv'))
 
 # making labels pretty for graph
 df_pretty <- df_merge %>% mutate(cell = toupper(cell))
@@ -222,12 +222,12 @@ df_merge$kinetics <- factor(df_merge$kinetics,
 
 df_merge <- separate(df_merge, 1, into = c('cell', 'direction'), sep = '_')
 
-# save annotated viral DEGs
-#write.csv(df_merge, paste0(pipe_dir, 'degs/viral_sig_TAZvsDMSO.csv'), 
-#          row.names = FALSE)
+# # save annotated viral DEGs
+# write.csv(df_merge, paste0(pipe_dir, 'degs/viral_sig_TAZvsDMSO.csv'), 
+#           row.names = FALSE)
 
-# START HERE if list already made
-#df_merge <- read.csv(paste0(pipe_dir, 'degs/viral_sig_TAZvsDMSO.csv'))
+## START HERE if list already made
+# df_merge <- read.csv(paste0(pipe_dir, 'degs/viral_sig_TAZvsDMSO.csv'))
 
 # making labels pretty for graph
 df_pretty <- df_merge %>% mutate(cell = toupper(cell))
@@ -280,23 +280,23 @@ akata_gsea <- msigdb_gsea('akata', 'MS177vsDMSO')
 # look at pathways & decide which to plot
 akata_gsea@result[["ID"]]
 # enrichment plot
-msigdb_gsea_enrich_plot('akata_MS177vsDMSO', akata_gsea, 7)
-msigdb_gsea_enrich_plot('akata_MS177vsDMSO', akata_gsea, 11)
+msigdb_gsea_enrich_plot('akata_MS177vsDMSO', akata_gsea, 8)
+msigdb_gsea_enrich_plot('akata_MS177vsDMSO', akata_gsea, 16)
 
 cf5_gsea <- msigdb_gsea('cf5', 'MS177vsDMSO')
 cf5_gsea@result[["ID"]]
-msigdb_gsea_enrich_plot('cf5_MS177vsDMSO', cf5_gsea, 5)
 msigdb_gsea_enrich_plot('cf5_MS177vsDMSO', cf5_gsea, 7)
+msigdb_gsea_enrich_plot('cf5_MS177vsDMSO', cf5_gsea, 15)
 
 ibl1_gsea <- msigdb_gsea('ibl1', 'MS177vsDMSO')
 ibl1_gsea@result[["ID"]]
-msigdb_gsea_enrich_plot('ibl1_MS177vsDMSO', ibl1_gsea, 2)
-msigdb_gsea_enrich_plot('ibl1_MS177vsDMSO', ibl1_gsea, 9)
+msigdb_gsea_enrich_plot('ibl1_MS177vsDMSO', ibl1_gsea, 3)
+msigdb_gsea_enrich_plot('ibl1_MS177vsDMSO', ibl1_gsea, 11)
 
 lcl_gsea <- msigdb_gsea('lcl', 'MS177vsDMSO')
 lcl_gsea@result[["ID"]]
-msigdb_gsea_enrich_plot('lcl_MS177vsDMSO', lcl_gsea, 5)
-msigdb_gsea_enrich_plot('lcl_MS177vsDMSO', lcl_gsea, 12)
+msigdb_gsea_enrich_plot('lcl_MS177vsDMSO', lcl_gsea, 6)
+msigdb_gsea_enrich_plot('lcl_MS177vsDMSO', lcl_gsea, 21)
 
 mutu_gsea <- msigdb_gsea('mutu', 'MS177vsDMSO')
 mutu_gsea@result[["ID"]]

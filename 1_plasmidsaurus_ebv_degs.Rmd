@@ -13,6 +13,7 @@ NOTES:
 This code begins with an expected counts file which is organized with replicates appearing in adjacent columns
 File organization and naming convention is essential for running properly
 Two different packages are used to get DEGs, keep track of naming for each
+All samples used to fit the models (different than old edgeR run)
 
 ```{r block0: setup}
 rm(list = ls())
