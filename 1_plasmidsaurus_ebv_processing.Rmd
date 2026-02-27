@@ -1,5 +1,5 @@
 ---
-title: "Plasmidsaurus RNAseq EBV+ Data Processing"
+title: "Plasmidsaurus RNAseq EBV Differential Gene Analysis"
 author: "Kaitlyn Tremble"
 date: "2026-02-23"
 output: html_document
@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 NOTES: 
 This code begins with an expected counts file which is organized with replicates appearing in adjacent columns
 File organization and naming convention is essential for running properly
+Two different packages are used to get DEGs, keep track of naming for each
 
 ```{r block0: setup}
 rm(list = ls())
@@ -23,7 +24,7 @@ pipe_dir <- file.path(base_dir, "2_pipeline/")
 out_dir <- file.path(base_dir, "3_outputs/samples/")
 setwd(code_dir)
 
-source('functions.R')
+source('0_functions.R')
 
 # packages
 using('BiocManager', 
@@ -32,9 +33,6 @@ using('BiocManager',
       'fgsea',
       'ggrepel', 
       'ggupset',
-      'ggVennDiagram',
-      'htmlwidgets',
-      'msigdbr',
       'pheatmap',
       'RColorBrewer',
       'Seurat',  
@@ -197,28 +195,108 @@ pheatmap(pearson_res,
 
 ```
 
-```{r block6: design matrix for all samples}
+```{r block6: design & contrast matrices for all samples}
+## reference: https://gtpb.github.io/ADER18S/pages/tutorial_complex
+
 metadata$group <- paste(metadata$cell_line, metadata$treatment, sep = ".")
-design_all <- model.matrix( ~ 0 + group, data = metadata)
-rownames(design_all) <- colnames(norm_counts)
-design_all
+design <- model.matrix( ~ 0 + group, data = metadata)
+rownames(design) <- colnames(norm_counts)
+design
+
+contr.matrix <- makeContrasts(
+   akata_MS177vsDMSO = groupakata.MS177 - groupakata.DMSO,
+   akata_TAZvsDMSO = groupakata.TAZ - groupakata.DMSO,
+   akata_MS177vsTAZ = groupakata.MS177 - groupakata.TAZ,
+   
+   cf5_MS177vsDMSO = groupcf5.MS177 - groupcf5.DMSO,
+   cf5_TAZvsDMSO = groupcf5.TAZ - groupcf5.DMSO,
+   cf5_MS177vsTAZ = groupcf5.MS177 - groupcf5.TAZ,
+   
+   ibl1_MS177vsDMSO = groupibl1.MS177 - groupibl1.DMSO,
+   ibl1_TAZvsDMSO = groupibl1.TAZ - groupibl1.DMSO,
+   ibl1_MS177vsTAZ = groupibl1.MS177 - groupibl1.TAZ,
+   
+   lcl_MS177vsDMSO = grouplcl.MS177 - grouplcl.DMSO,
+   lcl_TAZvsDMSO = grouplcl.TAZ - grouplcl.DMSO,
+   lcl_MS177vsTAZ = grouplcl.MS177 - grouplcl.TAZ,
+   
+   mutu_MS177vsDMSO = groupmutu.MS177 - groupmutu.DMSO,
+   mutu_TAZvsDMSO = groupmutu.TAZ - groupmutu.DMSO,
+   mutu_MS177vsTAZ = groupmutu.MS177 - groupmutu.TAZ,
+   
+   dmso_AKATAvsCF5 = groupakata.DMSO - groupcf5.DMSO,
+   ms177_AKATAvsCF5 = groupakata.MS177 - groupcf5.MS177,
+   taz_AKATAvsCF5 = groupakata.TAZ - groupcf5.TAZ,
+   
+   levels = colnames(design))
+
+contr.matrix
 ```
 
-```{r block7: edgeR est dispersion}
+```{r block7: edgeR DEGs}
+pipe_dir <- file.path(base_dir, "2_pipeline/edgeR/")
+out_dir <- file.path(base_dir, "3_outputs/edgeR/")
+
 # estimating the dispersion of the gene expression
 ## see edgeR user guide 2.11.2
 y <- estimateDisp(norm_counts, design, robust = TRUE)
-png(paste0(out_dir, "samples/all_est_disp.png"), 
+
+png(paste0(out_dir, "edger_est_disp.png"), 
     width = 800, 
     height = 600, 
     units = "px") 
 plotBCV(y)
 dev.off()
+
+## see edgeR user guide 3.3
+fit <- glmQLFit(y, design, robust=TRUE)
+
+## WARNING: make sure correct pipe_dir is set
+for (i in 1:ncol(contr.matrix)){
+  contrast_name <- colnames(contr.matrix)[i]
+  qlf <- glmQLFTest(fit, contrast=contr.matrix[,i])
+  degs_df <- as.data.frame(qlf) 
+  names(degs_df)[names(degs_df) == 'PValue'] <- 'P.Value'
+  degs_df <- clean_degs(degs_df)
+  save_degs(degs_df, contrast_name)
+}
 ```
 
-```{r block8: limma voom}
-v <- voom(norm_counts, design_all, plot=TRUE)
-v
+```{r block8: limma DEGs}
+## reference: https://f1000research.com/articles/5-1408/v3
 
+pipe_dir <- file.path(base_dir, "2_pipeline/limma/")
+out_dir <- file.path(base_dir, "3_outputs/limma/")
+
+# mean variance of un-fitted data
+png(paste0(out_dir, "limma_voom.png"), 
+    width = 3200, 
+    height = 1600, 
+    units = "px")
+par(mfrow=c(1,2))
+v <- voom(norm_counts, design, plot=TRUE)
+
+# fitting linear models
+vfit <- lmFit(v, design)
+vfit <- contrasts.fit(vfit, contrasts=contr.matrix)
+efit <- eBayes(vfit)
+plotSA(efit)
+title('Final model: Mean-variance trend')
+dev.off()
+
+summary(decideTests(efit))
+
+# treat method for significance testing
+tfit <- treat(vfit, lfc=1)
+dt <- decideTests(tfit)
+summary(dt)
+
+# saving DEGs for each contrast
+## WARNING: make sure correct pipe_dir is set
+for (i in (1:length(colnames(tfit[[1]])))){
+  contrast_name <- colnames(tfit[[1]])[i]
+  degs_df <- topTreat(tfit, coef=i, n=Inf) %>% clean_degs()
+  save_degs(degs_df, contrast_name)
+}
 ```
 

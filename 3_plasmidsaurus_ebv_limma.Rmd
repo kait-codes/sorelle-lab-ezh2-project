@@ -15,11 +15,11 @@ rm(list = ls())
 base_dir <- "~/Desktop/sequencing/2025_11_Plasmidsaurus_RNA_Seq"
 code_dir <- file.path(base_dir, "sorelle-lab-ezh2-project")
 data_dir <- file.path(base_dir, "1_data/")
-pipe_dir <- file.path(base_dir, "2_pipeline/")
-out_dir <- file.path(base_dir, "3_outputs/samples/")
+pipe_dir <- file.path(base_dir, "2_pipeline/limma/")
+out_dir <- file.path(base_dir, "3_outputs/limma/")
 setwd(code_dir)
 
-source('functions.R')
+source('0_functions.R')
 
 # packages
 using('BiocManager', 
